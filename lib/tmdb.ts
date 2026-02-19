@@ -109,6 +109,15 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
     });
   }
 
+  const producer = credits.crew.find((crewMember) => crewMember.job === "Producer");
+  if (producer && !people.has(producer.id)) {
+    people.set(producer.id, {
+      id: producer.id,
+      name: producer.name,
+      role: "Producer"
+    });
+  }
+
   return [...people.values()];
 }
 

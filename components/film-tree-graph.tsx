@@ -25,6 +25,11 @@ type PositionedNode = GraphNode & {
   fy: number;
 };
 
+type PositionedLink = {
+  source: string;
+  target: string;
+};
+
 function loadImage(src: string) {
   const cached = imageCache.get(src);
   if (cached) return cached;
@@ -37,8 +42,8 @@ function loadImage(src: string) {
 }
 
 function nodeRadius(node: GraphNode) {
-  if (node.type === "person") return 20;
-  return node.isCenter ? 58 : 39;
+  if (node.type === "person") return 18;
+  return node.isCenter ? 52 : 31;
 }
 
 function getLinkedMovieIds(personId: string, links: GraphLink[]) {
@@ -46,6 +51,48 @@ function getLinkedMovieIds(personId: string, links: GraphLink[]) {
     .filter((link) => link.source === personId)
     .map((link) => String(link.target))
     .filter((targetId) => targetId.startsWith("movie-"));
+}
+
+const ROLE_WEIGHT: Record<string, number> = {
+  Director: 0,
+  Producer: 1,
+  Writer: 2,
+  Actor: 3
+};
+
+function resolveCollisions(nodes: PositionedNode[], iterations = 140) {
+  const mutable = nodes.map((node) => ({ ...node }));
+
+  for (let i = 0; i < iterations; i += 1) {
+    let moved = false;
+    for (let a = 0; a < mutable.length; a += 1) {
+      for (let b = a + 1; b < mutable.length; b += 1) {
+        const n1 = mutable[a];
+        const n2 = mutable[b];
+        if (n1.isCenter || n2.isCenter) continue;
+
+        const dx = n2.x - n1.x;
+        const dy = n2.y - n1.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        const minDistance = nodeRadius(n1) + nodeRadius(n2) + 18;
+
+        if (distance < minDistance) {
+          const overlap = minDistance - distance;
+          const nx = dx / distance;
+          const ny = dy / distance;
+
+          n1.x -= nx * (overlap * 0.52);
+          n1.y -= ny * (overlap * 0.52) + overlap * 0.12;
+          n2.x += nx * (overlap * 0.52);
+          n2.y += ny * (overlap * 0.52) + overlap * 0.12;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+
+  return mutable.map((node) => ({ ...node, fx: node.x, fy: node.y }));
 }
 
 function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
@@ -62,7 +109,11 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const personNodes = nodes.filter((node) => node.type === "person");
-  const sortedPeople = [...personNodes].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  const sortedPeople = [...personNodes].sort((a, b) => {
+    const roleDiff = (ROLE_WEIGHT[a.role ?? "Actor"] ?? 10) - (ROLE_WEIGHT[b.role ?? "Actor"] ?? 10);
+    if (roleDiff !== 0) return roleDiff;
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
 
   const placed = new Map<string, PositionedNode>();
   placed.set(center.id, {
@@ -73,13 +124,12 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
     fy: 0
   });
 
-  const peopleGapX = 290;
-  const peopleY = 390;
-  const peopleStartX = -((sortedPeople.length - 1) * peopleGapX) / 2;
-
+  const peopleRadius = 220;
+  const peopleCount = sortedPeople.length || 1;
   sortedPeople.forEach((person, idx) => {
-    const x = peopleStartX + idx * peopleGapX;
-    const y = peopleY;
+    const angle = (Math.PI * 2 * idx) / peopleCount - Math.PI / 2;
+    const x = Math.cos(angle) * peopleRadius;
+    const y = Math.sin(angle) * peopleRadius;
     placed.set(person.id, {
       ...person,
       x,
@@ -95,17 +145,22 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
       .filter((movieId) => !seenMovies.has(movieId))
       .filter((movieId) => nodeById.has(movieId));
 
-    const localGapX = 260;
-    const branchStartX = (placed.get(person.id)?.x ?? 0) - ((relatedMovieIds.length - 1) * localGapX) / 2;
-    const branchY = 800 + personIdx * 320;
+    const personPosition = placed.get(person.id);
+    const anchorX = personPosition?.x ?? 0;
+    const anchorY = personPosition?.y ?? 0;
+    const branchCenterAngle = Math.atan2(anchorY, anchorX);
+    const movieOrbitRadius = 390 + personIdx * 8;
+    const spread = 0.5;
+    const startAngle = branchCenterAngle - ((relatedMovieIds.length - 1) * spread) / 2;
 
     relatedMovieIds.forEach((movieId, movieIdx) => {
       seenMovies.add(movieId);
       const movieNode = nodeById.get(movieId);
       if (!movieNode) return;
 
-      const x = branchStartX + movieIdx * localGapX;
-      const y = branchY;
+      const angle = startAngle + movieIdx * spread;
+      const x = Math.cos(angle) * movieOrbitRadius;
+      const y = Math.sin(angle) * movieOrbitRadius;
       placed.set(movieId, {
         ...movieNode,
         x,
@@ -118,8 +173,10 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
 
   const leftovers = nodes.filter((node) => !placed.has(node.id));
   leftovers.forEach((node, idx) => {
-    const x = ((idx % 6) - 2.5) * 260;
-    const y = 800 + sortedPeople.length * 320 + Math.floor(idx / 6) * 320;
+    const angle = (Math.PI * 2 * idx) / Math.max(leftovers.length, 1);
+    const radius = 430 + Math.floor(idx / 8) * 70;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
     placed.set(node.id, {
       ...node,
       x,
@@ -129,45 +186,7 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
     });
   });
 
-  const candidates = [...placed.values()].sort((a, b) => a.y - b.y || a.x - b.x);
-  const resolved: PositionedNode[] = [];
-
-  for (const node of candidates) {
-    if (node.id === center.id) {
-      resolved.push(node);
-      continue;
-    }
-
-    let y = node.y;
-    let hasCollision = true;
-    let guard = 0;
-
-    while (hasCollision && guard < 120) {
-      hasCollision = false;
-      for (const other of resolved) {
-        const dx = node.x - other.x;
-        const dy = y - other.y;
-        const minDistance = nodeRadius(node) + nodeRadius(other) + 36;
-        if (Math.hypot(dx, dy) < minDistance) {
-          y = other.y + minDistance + 12;
-          hasCollision = true;
-        }
-      }
-      guard += 1;
-    }
-
-    resolved.push({
-      ...node,
-      y,
-      fy: y
-    });
-  }
-
-  return resolved.map((node) => ({
-    ...node,
-    fx: node.x,
-    fy: node.y
-  }));
+  return resolveCollisions([...placed.values()]);
 }
 
 export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
@@ -178,7 +197,10 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   const graphData = useMemo(() => {
     return {
       nodes: layoutNodes(nodes, links),
-      links
+      links: links.map((link) => ({
+        source: String(link.source),
+        target: String(link.target)
+      })) as PositionedLink[]
     };
   }, [nodes, links]);
 
@@ -234,10 +256,10 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         }}
         onNodeClick={(node) => {
           const graphNode = node as PositionedNode;
-          if (graphNode.type !== "movie") return;
-
           graphRef.current?.centerAt(graphNode.x, graphNode.y, 260);
-          onMovieClick(graphNode.tmdbId);
+          if (graphNode.type === "movie") {
+            onMovieClick(graphNode.tmdbId);
+          }
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const graphNode = node as PositionedNode;

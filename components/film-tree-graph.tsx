@@ -85,15 +85,18 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
             const fontSize = Math.max(11, 13 / globalScale);
             const subtitleSize = Math.max(10, 11 / globalScale);
             const subtitle = `${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`;
+            const shouldShowMovieLabel = graphNode.isCenter || globalScale > 2.2;
 
-            ctx.fillStyle = "#f5f5f5";
-            ctx.font = `600 ${fontSize}px IBM Plex Sans, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.fillText(graphNode.title ?? "Untitled", x, y + size + fontSize + 6);
+            if (shouldShowMovieLabel) {
+              ctx.fillStyle = "#f5f5f5";
+              ctx.font = `600 ${fontSize}px IBM Plex Sans, sans-serif`;
+              ctx.textAlign = "center";
+              ctx.fillText(graphNode.title ?? "Untitled", x, y + size + fontSize + 6);
 
-            ctx.fillStyle = "#a1a1aa";
-            ctx.font = `500 ${subtitleSize}px IBM Plex Sans, sans-serif`;
-            ctx.fillText(subtitle, x, y + size + fontSize + subtitleSize + 9);
+              ctx.fillStyle = "#a1a1aa";
+              ctx.font = `500 ${subtitleSize}px IBM Plex Sans, sans-serif`;
+              ctx.fillText(subtitle, x, y + size + fontSize + subtitleSize + 9);
+            }
             return;
           }
 
@@ -111,10 +114,12 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
           const label = `${graphNode.name} (${graphNode.role})`;
           const fontSize = Math.max(10, 12 / globalScale);
-          ctx.font = `500 ${fontSize}px IBM Plex Sans, sans-serif`;
-          ctx.fillStyle = "#d4d4d8";
-          ctx.textAlign = "left";
-          ctx.fillText(label, x + radius + 6, y + 4);
+          if (globalScale > 2.4) {
+            ctx.font = `500 ${fontSize}px IBM Plex Sans, sans-serif`;
+            ctx.fillStyle = "#d4d4d8";
+            ctx.textAlign = "left";
+            ctx.fillText(label, x + radius + 6, y + 4);
+          }
         }}
       />
     </div>

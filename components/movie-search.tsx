@@ -96,6 +96,26 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
     return () => clearTimeout(timeout);
   }, [query]);
 
+  function normalizeTitle(value: string) {
+    return value.trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
+  function selectMovie(movie: MovieSummary) {
+    const year = movie.release_date?.slice(0, 4) || "N/A";
+    onMovieSelect(movie);
+    setQuery(`${movie.title} (${year})`);
+    setShowList(false);
+  }
+
+  function pickBestMatch(input: string, movies: MovieSummary[]) {
+    const normalizedInput = normalizeTitle(input);
+    const exact = movies.find((movie) => normalizeTitle(movie.title) === normalizedInput);
+    if (exact) return exact;
+
+    const startsWith = movies.find((movie) => normalizeTitle(movie.title).startsWith(normalizedInput));
+    return startsWith ?? movies[0] ?? null;
+  }
+
   return (
     <div className="relative" ref={containerRef}>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -106,6 +126,16 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
             setShowList(true);
           }}
           onFocus={() => setShowList(true)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            if (isSearching || results.length === 0) return;
+
+            event.preventDefault();
+            const match = pickBestMatch(query, results);
+            if (match) {
+              selectMovie(match);
+            }
+          }}
           disabled={disabled}
           className="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 text-sm text-white outline-none transition focus:border-accent"
           placeholder="Search for any movie title..."
@@ -114,7 +144,7 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
       </div>
 
       {showList && (query.trim().length >= 2 || isSearching) && (
-        <div className="absolute z-10 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
+        <div className="mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
           {isSearching && <p className="px-3 py-3 text-sm text-zinc-400">Searching...</p>}
 
           {!isSearching && results.length === 0 && (
@@ -128,11 +158,7 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
                 <button
                   key={movie.id}
                   type="button"
-                  onClick={() => {
-                    onMovieSelect(movie);
-                    setQuery(`${movie.title} (${year})`);
-                    setShowList(false);
-                  }}
+                  onClick={() => selectMovie(movie)}
                   className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-3 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
                 >
                   <span className="text-zinc-100">{movie.title}</span>

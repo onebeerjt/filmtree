@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 import { GraphLink, GraphNode } from "@/lib/types";
@@ -633,7 +633,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, fail
             <div className="flex w-64 gap-3 rounded-xl border border-zinc-700 bg-zinc-950/90 p-3 text-xs text-white shadow-2xl backdrop-blur">
               <div className="h-[90px] w-[60px] overflow-hidden rounded-md bg-zinc-800">
                 {node.posterPath ? (
-                  <Image
+                  <NextImage
                     src={`${IMAGE_BASE}${node.posterPath}`}
                     alt={node.title ?? "Poster"}
                     width={60}

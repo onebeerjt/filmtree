@@ -18,6 +18,7 @@ export type GraphNode = {
   id: string;
   tmdbId: number;
   type: "movie" | "person";
+  ring?: 0 | 1 | 2;
   title?: string;
   name?: string;
   role?: string;

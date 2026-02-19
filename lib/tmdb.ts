@@ -139,11 +139,14 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
       id: `movie-${centerMovie.id}`,
       tmdbId: centerMovie.id,
       type: "movie",
+      ring: 0,
       title: centerMovie.title,
       year: getYear(centerMovie.release_date),
       rating: Number(centerMovie.vote_average.toFixed(1)),
       posterPath: centerMovie.poster_path,
-      isCenter: true
+      isCenter: true,
+      x: 0,
+      y: 0
     }
   ];
 
@@ -161,15 +164,22 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
     })
   );
 
-  for (const { person, relatedMovies } of relatedMoviesByPerson) {
+  const peopleCount = relatedMoviesByPerson.length || 1;
+
+  for (const [personIndex, { person, relatedMovies }] of relatedMoviesByPerson.entries()) {
     const personNodeId = `person-${person.id}`;
+    const personAngle = (Math.PI * 2 * personIndex) / peopleCount;
+    const personRadius = 260;
 
     nodes.push({
       id: personNodeId,
       tmdbId: person.id,
       type: "person",
+      ring: 1,
       name: person.name,
-      role: person.role
+      role: person.role,
+      x: Math.cos(personAngle) * personRadius,
+      y: Math.sin(personAngle) * personRadius
     });
 
     links.push({
@@ -177,17 +187,22 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
       target: personNodeId
     });
 
-    for (const movie of relatedMovies) {
+    for (const [movieIndex, movie] of relatedMovies.entries()) {
       if (!movieIdsAdded.has(movie.id)) {
+        const movieAngle = personAngle + (movieIndex - (relatedMovies.length - 1) / 2) * 0.35;
+        const movieRadius = 560 + movieIndex * 22;
         nodes.push({
           id: `movie-${movie.id}`,
           tmdbId: movie.id,
           type: "movie",
+          ring: 2,
           title: movie.title,
           year: getYear(movie.release_date),
           rating: Number((movie.vote_average ?? 0).toFixed(1)),
           posterPath: movie.poster_path,
-          isCenter: false
+          isCenter: false,
+          x: Math.cos(movieAngle) * movieRadius,
+          y: Math.sin(movieAngle) * movieRadius
         });
         movieIdsAdded.add(movie.id);
       }

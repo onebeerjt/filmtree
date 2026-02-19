@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { forceCollide } from "d3-force";
+import { forceCollide, forceRadial, forceX, forceY } from "d3-force";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 import { GraphNode, GraphLink } from "@/lib/types";
 
@@ -50,6 +50,12 @@ function nodeRadius(node: GraphNode) {
   return node.isCenter ? 54 : 35;
 }
 
+function ringRadius(node: GraphNode) {
+  if (node.ring === 1) return 270;
+  if (node.ring === 2) return 620;
+  return 0;
+}
+
 export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
   const graphRef = useRef<ForceGraphMethods>();
@@ -75,8 +81,8 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
     const charge = fg.d3Force("charge") as ForceCharge | undefined;
     if (charge) {
-      charge.strength(-420);
-      charge.distanceMax(1800);
+      charge.strength(-950);
+      charge.distanceMax(3200);
     }
 
     const link = fg.d3Force("link") as ForceLink | undefined;
@@ -85,19 +91,25 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         const source = linkValue.source;
         const target = linkValue.target;
         const movieToPerson = source.type !== target.type;
-        return movieToPerson ? 230 : 280;
+        return movieToPerson ? 260 : 420;
       });
       link.strength((linkValue) => {
         const source = linkValue.source;
         const target = linkValue.target;
-        return source.type !== target.type ? 0.88 : 0.72;
+        return source.type !== target.type ? 0.9 : 0.58;
       });
     }
 
     fg.d3Force(
       "collide",
-      forceCollide((node) => nodeRadius(node as GraphNode) + 14).strength(1).iterations(3)
+      forceCollide((node) => nodeRadius(node as GraphNode) + 22).strength(1).iterations(5)
     );
+    fg.d3Force(
+      "ring",
+      forceRadial((node) => ringRadius(node as GraphNode), 0, 0).strength(0.23)
+    );
+    fg.d3Force("x", forceX(0).strength(0.02));
+    fg.d3Force("y", forceY(0).strength(0.02));
 
     fg.d3ReheatSimulation();
     setTimeout(() => {
@@ -121,9 +133,24 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         cooldownTicks={220}
         warmupTicks={90}
         d3AlphaDecay={0.02}
-        d3VelocityDecay={0.2}
-        minZoom={0.35}
+        d3VelocityDecay={0.17}
+        minZoom={0.25}
         maxZoom={7}
+        nodeVal={(node) => {
+          const graphNode = node as GraphNode;
+          const r = nodeRadius(graphNode);
+          return (r * r) / 25;
+        }}
+        nodePointerAreaPaint={(node, color, ctx) => {
+          const graphNode = node as GraphNode;
+          const x = graphNode.x ?? 0;
+          const y = graphNode.y ?? 0;
+          const r = nodeRadius(graphNode) + 8;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, 2 * Math.PI);
+          ctx.fill();
+        }}
         onNodeHover={(node) => {
           const graphNode = node as GraphNode | null;
           setHoveredId(graphNode?.id ?? null);
@@ -131,6 +158,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         onNodeClick={(node) => {
           const graphNode = node as GraphNode;
           if (graphNode.type === "movie") {
+            graphRef.current?.centerAt(graphNode.x ?? 0, graphNode.y ?? 0, 250);
             onMovieClick(graphNode.tmdbId);
           }
         }}

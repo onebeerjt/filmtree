@@ -46,6 +46,33 @@ function nodeRadius(node: GraphNode) {
   return node.isCenter ? 52 : 31;
 }
 
+function initials(name?: string) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[parts.length - 1][0] ?? ""}`.toUpperCase();
+}
+
+function roleColor(role?: string) {
+  switch (role) {
+    case "Director":
+      return "#f7d88a";
+    case "Producer":
+      return "#a7f3d0";
+    case "Writer":
+      return "#93c5fd";
+    default:
+      return "#d4d4d8";
+  }
+}
+
+function shortName(name?: string) {
+  if (!name) return "Unknown";
+  if (name.length <= 18) return name;
+  return `${name.slice(0, 17)}…`;
+}
+
 function getLinkedMovieIds(personId: string, links: GraphLink[]) {
   return links
     .filter((link) => link.source === personId)
@@ -324,23 +351,44 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
           const radius = nodeRadius(graphNode);
           const isHovered = hoveredId === graphNode.id;
+          const accent = roleColor(graphNode.role);
 
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isHovered ? "#71717a" : "#3f3f46";
+          ctx.fillStyle = isHovered ? "#52525b" : "#3f3f46";
           ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.65)";
-          ctx.lineWidth = 1.2;
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = isHovered ? 2 : 1.5;
           ctx.stroke();
 
-          if (isHovered) {
-            const label = `${graphNode.name} (${graphNode.role})`;
-            const fontSize = Math.max(11, 13 / globalScale);
-            ctx.font = `500 ${fontSize}px IBM Plex Sans, sans-serif`;
-            ctx.fillStyle = "#d4d4d8";
-            ctx.textAlign = "left";
-            ctx.fillText(label, x + radius + 8, y + 4);
-          }
+          const initialsText = initials(graphNode.name);
+          const initialsSize = Math.max(9, 10 / globalScale);
+          ctx.fillStyle = "#f4f4f5";
+          ctx.font = `700 ${initialsSize}px IBM Plex Sans, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(initialsText, x, y + 3);
+
+          const labelText = `${shortName(graphNode.name)} • ${graphNode.role ?? "Person"}`;
+          const labelSize = Math.max(10, 11 / globalScale);
+          ctx.font = `600 ${labelSize}px IBM Plex Sans, sans-serif`;
+          const textWidth = ctx.measureText(labelText).width;
+          const chipPaddingX = 8;
+          const chipHeight = labelSize + 8;
+          const chipWidth = textWidth + chipPaddingX * 2;
+          const chipX = x - chipWidth / 2;
+          const chipY = y + radius + 8;
+
+          ctx.fillStyle = "rgba(15,23,42,0.82)";
+          ctx.beginPath();
+          ctx.roundRect(chipX, chipY, chipWidth, chipHeight, 8);
+          ctx.fill();
+          ctx.strokeStyle = `${accent}88`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = accent;
+          ctx.textAlign = "center";
+          ctx.fillText(labelText, x, chipY + chipHeight - 6);
         }}
       />
     </div>

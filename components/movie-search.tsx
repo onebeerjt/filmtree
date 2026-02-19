@@ -144,7 +144,7 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
       </div>
 
       {showList && (query.trim().length >= 2 || isSearching) && (
-        <div className="mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
+        <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[52vh] w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
           {isSearching && <p className="px-3 py-3 text-sm text-zinc-400">Searching...</p>}
 
           {!isSearching && results.length === 0 && (

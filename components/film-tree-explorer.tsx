@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { FilmTreeGraph } from "@/components/film-tree-graph";
-import { LoadingSkeleton } from "@/components/loading-skeleton";
 import { MovieSearch } from "@/components/movie-search";
 import { FilmTreeResponse, MovieSummary } from "@/lib/types";
 
@@ -100,26 +99,41 @@ export function FilmTreeExplorer() {
   }, []);
 
   return (
-    <section className="space-y-4">
-      <MovieSearch onMovieSelect={handleSearchSelect} disabled={isLoading} />
+    <section className="relative h-full w-full">
+      {tree && <FilmTreeGraph nodes={tree.nodes} links={tree.links} onMovieClick={fetchTree} />}
 
-      {error && <p className="rounded-lg border border-red-600/50 bg-red-900/30 px-3 py-2 text-sm text-red-200">{error}</p>}
-
-      {isLoading && !tree ? (
-        <LoadingSkeleton />
-      ) : tree ? (
-        <>
-          <div className="flex items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-3">
-            <p className="text-sm text-zinc-200">
-              Center movie: <span className="font-semibold text-white">{tree.centerTitle}</span>
-            </p>
-            <p className="text-xs text-zinc-500">Tap or click a movie node to re-center the tree.</p>
-          </div>
-          <FilmTreeGraph nodes={tree.nodes} links={tree.links} onMovieClick={fetchTree} />
-        </>
-      ) : (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-6 text-sm text-zinc-400">
+      {!tree && !isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center text-zinc-400">
           Search a movie title to generate a connection graph.
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute left-0 top-0 z-20 w-full p-3 sm:p-6">
+        <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-zinc-700/60 bg-zinc-950/70 p-4 shadow-2xl backdrop-blur-xl sm:p-5">
+          <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-6xl">Film Tree</h1>
+          <p className="mt-2 text-sm text-zinc-300 sm:text-base">Type a title, hit Enter, then explore by clicking any movie node.</p>
+          <div className="mt-4">
+            <MovieSearch onMovieSelect={handleSearchSelect} disabled={isLoading} />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-4 text-xs text-zinc-400">
+            <p>
+              Center: <span className="font-semibold text-zinc-100">{tree?.centerTitle ?? "Loading..."}</span>
+            </p>
+            <p>Scroll to zoom. Drag to orbit.</p>
+          </div>
+
+          {error && (
+            <p className="mt-3 rounded-lg border border-red-600/50 bg-red-900/30 px-3 py-2 text-sm text-red-200">{error}</p>
+          )}
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="pointer-events-none absolute inset-0 z-10 bg-black/20">
+          <div className="absolute right-3 top-3 rounded-full border border-zinc-700 bg-zinc-950/80 px-3 py-1 text-xs text-zinc-300 sm:right-6 sm:top-6">
+            Building branches...
+          </div>
         </div>
       )}
     </section>

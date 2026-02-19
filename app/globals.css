@@ -13,10 +13,11 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
-  background: #0a0a0a;
+  min-height: 100vh;
+  background: radial-gradient(circle at center, #111318 0%, #0a0a0a 70%);
   color: #ffffff;
   font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  overflow: hidden;
 }
 
 body::before {
@@ -25,9 +26,9 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.06), transparent 28%),
-    radial-gradient(circle at 80% 0%, rgba(247, 216, 138, 0.12), transparent 35%),
-    radial-gradient(circle at 30% 90%, rgba(77, 128, 166, 0.12), transparent 35%);
+  opacity: 0.03;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.9) 1px, transparent 1.6px);
+  background-size: 18px 18px;
 }
 
 body::after {
@@ -36,7 +37,7 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  opacity: 0.1;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E");
 }
 

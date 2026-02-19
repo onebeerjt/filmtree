@@ -6,6 +6,8 @@ import { MovieSummary } from "@/lib/types";
 type Props = {
   onMovieSelect: (movie: MovieSummary) => void;
   disabled?: boolean;
+  isLoading?: boolean;
+  placeholder?: string;
 };
 
 type CacheEnvelope<T> = {
@@ -41,7 +43,12 @@ function setCache<T>(key: string, value: T, ttlMs: number) {
   localStorage.setItem(key, JSON.stringify(envelope));
 }
 
-export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
+export function MovieSearch({
+  onMovieSelect,
+  disabled = false,
+  isLoading = false,
+  placeholder = "Search any film..."
+}: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MovieSummary[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -118,7 +125,7 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
 
   return (
     <div className="relative" ref={containerRef}>
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="relative flex flex-col gap-2 sm:flex-row">
         <input
           value={query}
           onChange={(event) => {
@@ -137,10 +144,13 @@ export function MovieSearch({ onMovieSelect, disabled = false }: Props) {
             }
           }}
           disabled={disabled}
-          className="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 text-sm text-white outline-none transition focus:border-accent"
-          placeholder="Search for any movie title..."
+          className="h-12 w-full rounded-full border border-zinc-600/70 bg-zinc-950/55 px-5 pr-12 text-sm text-white outline-none transition focus:border-[#c9a84c] focus:bg-zinc-900/65"
+          placeholder={placeholder}
           aria-label="Search for a movie"
         />
+        {isLoading && (
+          <span className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border-2 border-zinc-600 border-t-[#c9a84c] animate-spin" />
+        )}
       </div>
 
       {showList && (query.trim().length >= 2 || isSearching) && (

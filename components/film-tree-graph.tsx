@@ -1,21 +1,24 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ForceGraphMethods } from "react-force-graph-2d";
-import { GraphNode, GraphLink } from "@/lib/types";
+import { GraphLink, GraphNode } from "@/lib/types";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false
 });
 
-const imageCache = new Map<string, HTMLImageElement>();
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w185";
+const imageCache = new Map<string, HTMLImageElement>();
 
 type Props = {
   nodes: GraphNode[];
   links: GraphLink[];
   onMovieClick: (movieId: number) => void;
+  pendingMovieId: number | null;
+  failedMovieId: number | null;
 };
 
 type PositionedNode = GraphNode & {
@@ -30,10 +33,36 @@ type PositionedLink = {
   target: string;
 };
 
+type TooltipState = {
+  nodeId: string;
+  x: number;
+  y: number;
+};
+
+type CenterTransition = {
+  prevId: string | null;
+  nextId: string;
+  startMs: number;
+};
+
+const ROLE_WEIGHT: Record<string, number> = {
+  Director: 0,
+  Producer: 1,
+  Writer: 2,
+  Actor: 3
+};
+
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeInCubic(t: number) {
+  return t * t * t;
+}
+
 function loadImage(src: string) {
   const cached = imageCache.get(src);
   if (cached) return cached;
-
   const img = new Image();
   img.src = src;
   img.crossOrigin = "anonymous";
@@ -41,15 +70,19 @@ function loadImage(src: string) {
   return img;
 }
 
-function movieSize(node: GraphNode) {
-  if (node.isCenter) return { w: 94, h: 142 };
-  return { w: 70, h: 105 };
-}
-
-function nodeRadius(node: GraphNode) {
-  if (node.type === "person") return 18;
-  const { w, h } = movieSize(node);
-  return Math.hypot(w / 2, h / 2);
+function roleColor(role?: string) {
+  switch (role) {
+    case "Director":
+      return "#C9A84C";
+    case "Actor":
+      return "#4A90D9";
+    case "Writer":
+      return "#9B59B6";
+    case "Producer":
+      return "#1ABC9C";
+    default:
+      return "#9ca3af";
+  }
 }
 
 function initials(name?: string) {
@@ -60,23 +93,30 @@ function initials(name?: string) {
   return `${parts[0][0] ?? ""}${parts[parts.length - 1][0] ?? ""}`.toUpperCase();
 }
 
-function roleColor(role?: string) {
-  switch (role) {
-    case "Director":
-      return "#f7d88a";
-    case "Producer":
-      return "#a7f3d0";
-    case "Writer":
-      return "#93c5fd";
-    default:
-      return "#d4d4d8";
+function filmSizeFromRating(node: GraphNode) {
+  const rating = node.rating;
+  let width = 45;
+  if (typeof rating === "number") {
+    if (rating >= 8) width = 70;
+    else if (rating >= 7) width = 55;
+    else if (rating >= 6) width = 45;
+    else width = 35;
   }
+
+  if (node.isCenter) {
+    width = Math.round(45 * 2.5);
+  }
+
+  return {
+    w: width,
+    h: Math.round(width * 1.45)
+  };
 }
 
-function shortName(name?: string) {
-  if (!name) return "Unknown";
-  if (name.length <= 18) return name;
-  return `${name.slice(0, 17)}…`;
+function nodeRadius(node: GraphNode) {
+  if (node.type === "person") return 20;
+  const size = filmSizeFromRating(node);
+  return Math.hypot(size.w / 2, size.h / 2);
 }
 
 function getNeighbors(nodeId: string, links: GraphLink[]) {
@@ -90,14 +130,7 @@ function getNeighbors(nodeId: string, links: GraphLink[]) {
   return [...neighbors];
 }
 
-const ROLE_WEIGHT: Record<string, number> = {
-  Director: 0,
-  Producer: 1,
-  Writer: 2,
-  Actor: 3
-};
-
-function resolveCollisions(nodes: PositionedNode[], iterations = 160) {
+function resolveCollisions(nodes: PositionedNode[], iterations = 140) {
   const mutable = nodes.map((node) => ({ ...node }));
 
   for (let i = 0; i < iterations; i += 1) {
@@ -106,24 +139,25 @@ function resolveCollisions(nodes: PositionedNode[], iterations = 160) {
       for (let b = a + 1; b < mutable.length; b += 1) {
         const n1 = mutable[a];
         const n2 = mutable[b];
-        if (n1.isCenter || n2.isCenter) continue;
-
         const dx = n2.x - n1.x;
         const dy = n2.y - n1.y;
         const distance = Math.hypot(dx, dy) || 1;
-        const minDistance = nodeRadius(n1) + nodeRadius(n2) + 18;
+        const minDistance = nodeRadius(n1) + nodeRadius(n2) + 20;
+        if (distance >= minDistance) continue;
 
-        if (distance < minDistance) {
-          const overlap = minDistance - distance;
-          const nx = dx / distance;
-          const ny = dy / distance;
+        const overlap = minDistance - distance;
+        const nx = dx / distance;
+        const ny = dy / distance;
 
-          n1.x -= nx * (overlap * 0.52);
-          n1.y -= ny * (overlap * 0.52) + overlap * 0.12;
-          n2.x += nx * (overlap * 0.52);
-          n2.y += ny * (overlap * 0.52) + overlap * 0.12;
-          moved = true;
+        if (!n1.isCenter) {
+          n1.x -= nx * overlap * 0.52;
+          n1.y -= ny * overlap * 0.52;
         }
+        if (!n2.isCenter) {
+          n2.x += nx * overlap * 0.52;
+          n2.y += ny * overlap * 0.52;
+        }
+        moved = true;
       }
     }
     if (!moved) break;
@@ -132,7 +166,7 @@ function resolveCollisions(nodes: PositionedNode[], iterations = 160) {
   return mutable.map((node) => ({ ...node, fx: node.x, fy: node.y }));
 }
 
-function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string | null): PositionedNode[] {
+function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string | null) {
   const defaultCenter = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
   if (!defaultCenter) {
     return nodes.map((node) => ({
@@ -146,12 +180,6 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const hub = (focusNodeId ? nodeById.get(focusNodeId) : null) ?? defaultCenter;
-  const allNodes = [...nodeById.values()];
-  const sortedNodes = [...allNodes].sort((a, b) => {
-    const roleDiff = (ROLE_WEIGHT[a.role ?? "Actor"] ?? 10) - (ROLE_WEIGHT[b.role ?? "Actor"] ?? 10);
-    if (roleDiff !== 0) return roleDiff;
-    return (a.name ?? a.title ?? "").localeCompare(b.name ?? b.title ?? "");
-  });
 
   const placed = new Map<string, PositionedNode>();
   placed.set(hub.id, {
@@ -171,69 +199,94 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string
       return (a.name ?? a.title ?? "").localeCompare(b.name ?? b.title ?? "");
     });
 
-  const firstRingRadius = hub.type === "movie" ? 220 : 260;
+  const firstRadius = hub.type === "movie" ? 210 : 250;
   const firstCount = firstHop.length || 1;
   const firstAngles = new Map<string, number>();
   firstHop.forEach((node, idx) => {
     const angle = (Math.PI * 2 * idx) / firstCount - Math.PI / 2;
     firstAngles.set(node.id, angle);
-    const x = Math.cos(angle) * firstRingRadius;
-    const y = Math.sin(angle) * firstRingRadius;
+    const x = Math.cos(angle) * firstRadius;
+    const y = Math.sin(angle) * firstRadius;
     placed.set(node.id, { ...node, x, y, fx: x, fy: y });
   });
 
   const seen = new Set<string>([hub.id, ...firstHop.map((n) => n.id)]);
-  for (const neighbor of firstHop) {
-    const neighborAngle = firstAngles.get(neighbor.id) ?? 0;
-    const secondHop = getNeighbors(neighbor.id, links)
+  for (const n of firstHop) {
+    const baseAngle = firstAngles.get(n.id) ?? 0;
+    const secondHop = getNeighbors(n.id, links)
       .filter((id) => !seen.has(id))
       .map((id) => nodeById.get(id))
       .filter((node): node is GraphNode => Boolean(node));
 
-    const spread = 0.42;
-    const startAngle = neighborAngle - ((secondHop.length - 1) * spread) / 2;
+    const spread = 0.34;
+    const start = baseAngle - ((secondHop.length - 1) * spread) / 2;
     secondHop.forEach((node, idx) => {
       seen.add(node.id);
-      const angle = startAngle + idx * spread;
-      const radius = 400 + idx * 6;
+      const angle = start + idx * spread;
+      const radius = 360 + idx * 6;
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       placed.set(node.id, { ...node, x, y, fx: x, fy: y });
     });
   }
 
-  const leftovers = sortedNodes.filter((node) => !placed.has(node.id));
+  const leftovers = nodes.filter((n) => !placed.has(n.id));
   leftovers.forEach((node, idx) => {
     const angle = (Math.PI * 2 * idx) / Math.max(leftovers.length, 1);
-    const radius = 470 + Math.floor(idx / 10) * 60;
+    const radius = 420 + Math.floor(idx / 8) * 50;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
-    placed.set(node.id, {
-      ...node,
-      x,
-      y,
-      fx: x,
-      fy: y
-    });
+    placed.set(node.id, { ...node, x, y, fx: x, fy: y });
   });
 
   return resolveCollisions([...placed.values()]);
 }
 
-export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
+export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, failedMovieId }: Props) {
   const graphRef = useRef<ForceGraphMethods>();
+  const centerIdRef = useRef<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ width: 1200, height: 800 });
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [isTouch, setIsTouch] = useState(false);
+  const [tappedNodeId, setTappedNodeId] = useState<string | null>(null);
+  const [centerTransition, setCenterTransition] = useState<CenterTransition | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    setIsTouch(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   useEffect(() => {
     const center = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
-    setFocusNodeId(center?.id ?? null);
+    const nextCenterId = center?.id ?? null;
+    if (nextCenterId && centerIdRef.current && centerIdRef.current !== nextCenterId) {
+      setCenterTransition({
+        prevId: centerIdRef.current,
+        nextId: nextCenterId,
+        startMs: Date.now()
+      });
+    }
+    centerIdRef.current = nextCenterId;
+    setFocusNodeId(nextCenterId);
   }, [nodes]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setTick((v) => v + 1), 33);
+    return () => clearInterval(timer);
+  }, []);
+
   const graphData = useMemo(() => {
+    const laidOut = layoutNodes(nodes, links, focusNodeId);
+    const sorted = [...laidOut].sort((a, b) => {
+      if (a.isCenter && !b.isCenter) return 1;
+      if (!a.isCenter && b.isCenter) return -1;
+      return 0;
+    });
+
     return {
-      nodes: layoutNodes(nodes, links, focusNodeId),
+      nodes: sorted,
       links: links.map((link) => ({
         source: String(link.source),
         target: String(link.target)
@@ -241,23 +294,26 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
     };
   }, [nodes, links, focusNodeId]);
 
+  const nodeById = useMemo(() => {
+    return new Map(graphData.nodes.map((node) => [node.id, node]));
+  }, [graphData.nodes]);
+
+  const hoveredNode = hoveredId ? nodeById.get(hoveredId) : null;
+
   const { connectedNodeIds, connectedLinkKeys } = useMemo(() => {
     if (!hoveredId) {
-      return {
-        connectedNodeIds: new Set<string>(),
-        connectedLinkKeys: new Set<string>()
-      };
+      return { connectedNodeIds: new Set<string>(), connectedLinkKeys: new Set<string>() };
     }
 
     const nodeSet = new Set<string>([hoveredId]);
     const linkSet = new Set<string>();
     for (const link of graphData.links) {
-      const source = String(link.source);
-      const target = String(link.target);
-      if (source === hoveredId || target === hoveredId) {
-        nodeSet.add(source);
-        nodeSet.add(target);
-        linkSet.add(`${source}->${target}`);
+      const s = String(link.source);
+      const t = String(link.target);
+      if (s === hoveredId || t === hoveredId) {
+        nodeSet.add(s);
+        nodeSet.add(t);
+        linkSet.add(`${s}->${t}`);
       }
     }
 
@@ -266,12 +322,8 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
   useEffect(() => {
     function updateViewport() {
-      setViewport({
-        width: window.innerWidth,
-        height: window.innerHeight
-      });
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
     }
-
     updateViewport();
     window.addEventListener("resize", updateViewport);
     return () => window.removeEventListener("resize", updateViewport);
@@ -280,8 +332,51 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
-    setTimeout(() => fg.zoomToFit?.(700, 200), 20);
+
+    const centerNode = graphData.nodes.find((n) => n.isCenter);
+    if (centerNode) {
+      fg.centerAt(centerNode.x, centerNode.y, 600);
+      fg.zoom(1.15, 600);
+    } else {
+      fg.zoomToFit?.(700, 120);
+    }
   }, [graphData]);
+
+  useEffect(() => {
+    if (!tooltip?.nodeId) return;
+    const fg = graphRef.current as ForceGraphMethods & {
+      graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+    };
+    if (!fg?.graph2ScreenCoords) return;
+
+    const node = nodeById.get(tooltip.nodeId);
+    if (!node) return;
+    const pt = fg.graph2ScreenCoords(node.x, node.y);
+    setTooltip({ nodeId: node.id, x: pt.x, y: pt.y });
+  }, [tick, nodeById, tooltip?.nodeId]);
+
+  function getLinkRole(link: PositionedLink) {
+    const source = nodeById.get(String(link.source));
+    const target = nodeById.get(String(link.target));
+    if (source?.type === "person") return source.role;
+    if (target?.type === "person") return target.role;
+    return undefined;
+  }
+
+  function getMovieDirectorName(movieNodeId: string) {
+    const directors = graphData.links
+      .filter((link) => String(link.source) === movieNodeId || String(link.target) === movieNodeId)
+      .map((link) => {
+        const source = nodeById.get(String(link.source));
+        const target = nodeById.get(String(link.target));
+        if (source?.type === "person" && source.role === "Director") return source.name;
+        if (target?.type === "person" && target.role === "Director") return target.name;
+        return null;
+      })
+      .filter((name): name is string => Boolean(name));
+
+    return directors[0] ?? "Unknown";
+  }
 
   return (
     <div className="h-full w-full">
@@ -290,6 +385,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         graphData={graphData}
         width={viewport.width}
         height={viewport.height}
+        autoPauseRedraw={false}
         backgroundColor="rgba(0,0,0,0)"
         nodeRelSize={1}
         cooldownTicks={0}
@@ -298,14 +394,37 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         enableNodeDrag={false}
         enablePointerInteraction
         linkWidth={(link) => {
-          const source = String((link as PositionedLink).source);
-          const target = String((link as PositionedLink).target);
-          return connectedLinkKeys.has(`${source}->${target}`) ? 2.4 : 1;
+          const line = link as PositionedLink;
+          const key = `${line.source}->${line.target}`;
+          const source = nodeById.get(String(line.source));
+          const target = nodeById.get(String(line.target));
+
+          const isCenterToPerson =
+            (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
+
+          if (hoveredNode?.type === "person") {
+            return connectedLinkKeys.has(key) ? 2.5 : 0.8;
+          }
+
+          return isCenterToPerson ? 2.1 : 1.1;
         }}
         linkColor={(link) => {
-          const source = String((link as PositionedLink).source);
-          const target = String((link as PositionedLink).target);
-          return connectedLinkKeys.has(`${source}->${target}`) ? "rgba(247,216,138,0.72)" : "rgba(255,255,255,0.18)";
+          const line = link as PositionedLink;
+          const key = `${line.source}->${line.target}`;
+          const source = nodeById.get(String(line.source));
+          const target = nodeById.get(String(line.target));
+          const role = getLinkRole(line);
+          const baseColor = roleColor(role);
+
+          const isCenterToPerson =
+            (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
+
+          if (hoveredNode?.type === "person") {
+            return connectedLinkKeys.has(key) ? `${baseColor}E6` : "rgba(255,255,255,0.10)";
+          }
+
+          if (isCenterToPerson) return `${baseColor}CC`;
+          return `${baseColor}4D`;
         }}
         nodePointerAreaPaint={(node, color, ctx) => {
           const graphNode = node as PositionedNode;
@@ -313,40 +432,117 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           const y = graphNode.y;
           ctx.fillStyle = color;
           if (graphNode.type === "movie") {
-            const { w, h } = movieSize(graphNode);
+            const { w, h } = filmSizeFromRating(graphNode);
             ctx.fillRect(x - w / 2 - 8, y - h / 2 - 8, w + 16, h + 16);
           } else {
-            const r = nodeRadius(graphNode) + 8;
             ctx.beginPath();
-            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.arc(x, y, 28, 0, 2 * Math.PI);
             ctx.fill();
           }
         }}
         onNodeHover={(node) => {
+          if (isTouch) return;
           const graphNode = node as PositionedNode | null;
           setHoveredId(graphNode?.id ?? null);
+
+          const fg = graphRef.current as ForceGraphMethods & {
+            graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+          };
+          if (!graphNode || !fg?.graph2ScreenCoords) {
+            setTooltip(null);
+            return;
+          }
+
+          const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
+          setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
         }}
         onNodeClick={(node) => {
           const graphNode = node as PositionedNode;
           setFocusNodeId(graphNode.id);
-          graphRef.current?.centerAt(graphNode.x, graphNode.y, 260);
-          if (graphNode.type === "movie") {
-            onMovieClick(graphNode.tmdbId);
+          graphRef.current?.centerAt(graphNode.x, graphNode.y, 600);
+
+          const fg = graphRef.current as ForceGraphMethods & {
+            graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+          };
+          if (fg?.graph2ScreenCoords) {
+            const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
+            setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
           }
+
+          if (graphNode.type !== "movie") {
+            setTappedNodeId(graphNode.id);
+            return;
+          }
+
+          if (isTouch && tappedNodeId !== graphNode.id) {
+            setTappedNodeId(graphNode.id);
+            return;
+          }
+
+          setTappedNodeId(graphNode.id);
+          onMovieClick(graphNode.tmdbId);
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const graphNode = node as PositionedNode;
-          const x = graphNode.x;
-          const y = graphNode.y;
+          const baseX = graphNode.x;
+          const baseY = graphNode.y;
+
+          const shakeOffset =
+            failedMovieId && graphNode.type === "movie" && graphNode.tmdbId === failedMovieId
+              ? Math.sin(Date.now() * 0.06) * 5
+              : 0;
+
+          const x = baseX + shakeOffset;
+          const y = baseY;
+
+          const transitionProgress = centerTransition
+            ? Math.min((Date.now() - centerTransition.startMs) / 600, 1)
+            : 1;
 
           if (graphNode.type === "movie") {
-            const { w, h } = movieSize(graphNode);
-            const isHovered = hoveredId === graphNode.id;
+            let { w, h } = filmSizeFromRating(graphNode);
+
+            if (centerTransition) {
+              if (graphNode.id === centerTransition.nextId) {
+                const t = easeInCubic(transitionProgress);
+                const normal = filmSizeFromRating({ ...graphNode, isCenter: false });
+                w = normal.w + (w - normal.w) * t;
+                h = normal.h + (h - normal.h) * t;
+              }
+              if (graphNode.id === centerTransition.prevId) {
+                const t = easeOutCubic(transitionProgress);
+                const normal = filmSizeFromRating({ ...graphNode, isCenter: false });
+                const hero = filmSizeFromRating({ ...graphNode, isCenter: true });
+                w = hero.w + (normal.w - hero.w) * t;
+                h = hero.h + (normal.h - hero.h) * t;
+              }
+            }
+
+            const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
 
+            if (graphNode.isCenter) {
+              const pulse = 1 + 0.15 * (0.5 + 0.5 * Math.sin(Date.now() / 320));
+              const pw = w * pulse;
+              const ph = h * pulse;
+              ctx.beginPath();
+              ctx.roundRect(x - pw / 2, y - ph / 2, pw, ph, 14);
+              ctx.strokeStyle = "rgba(201,168,76,0.45)";
+              ctx.lineWidth = 3;
+              ctx.stroke();
+            }
+
+            if (pendingMovieId && pendingMovieId === graphNode.tmdbId) {
+              ctx.beginPath();
+              ctx.roundRect(x - w / 2 - 6, y - h / 2 - 6, w + 12, h + 12, 12);
+              ctx.strokeStyle = "rgba(255,255,255,0.95)";
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+
             if (isHovered || isConnected) {
-              ctx.fillStyle = isHovered ? "rgba(247,216,138,0.33)" : "rgba(247,216,138,0.2)";
-              ctx.fillRect(x - w / 2 - 6, y - h / 2 - 6, w + 12, h + 12);
+              ctx.fillStyle = isHovered ? "rgba(255,255,255,0.15)" : "rgba(201,168,76,0.18)";
+              ctx.fillRect(x - w / 2 - 5, y - h / 2 - 5, w + 10, h + 10);
             }
 
             ctx.save();
@@ -367,76 +563,96 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
               ctx.fillStyle = "#1f2937";
               ctx.fillRect(x - w / 2, y - h / 2, w, h);
             }
-
             ctx.restore();
 
             ctx.beginPath();
             ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
-            ctx.strokeStyle = graphNode.isCenter || isConnected ? "#f7d88a" : "rgba(255,255,255,0.62)";
-            ctx.lineWidth = graphNode.isCenter ? 3 : 1.6;
+            ctx.strokeStyle = graphNode.isCenter ? "#C9A84C" : "rgba(255,255,255,0.55)";
+            ctx.lineWidth = graphNode.isCenter ? 3 : 1.4;
             ctx.stroke();
 
-            const showTitle = graphNode.isCenter || isHovered || isConnected;
-            if (showTitle) {
-              const fontSize = Math.max(11, 13 / globalScale);
-              const subtitleSize = Math.max(10, 11 / globalScale);
-
-              ctx.fillStyle = "#f5f5f5";
-              ctx.font = `700 ${fontSize}px IBM Plex Sans, sans-serif`;
+            if (graphNode.isCenter) {
+              ctx.fillStyle = "#ffffff";
+              ctx.font = `700 ${Math.max(16, 16 / globalScale)}px IBM Plex Sans, sans-serif`;
               ctx.textAlign = "center";
-              ctx.fillText(graphNode.title ?? "Untitled", x, y + h / 2 + fontSize + 6);
+              ctx.fillText(graphNode.title ?? "Untitled", x, y + h / 2 + 24);
 
-              const subtitle = `${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`;
-              ctx.fillStyle = "#c9c9ce";
-              ctx.font = `500 ${subtitleSize}px IBM Plex Sans, sans-serif`;
-              ctx.fillText(subtitle, x, y + h / 2 + fontSize + subtitleSize + 9);
+              ctx.fillStyle = "#C9A84C";
+              ctx.font = `600 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
+              ctx.fillText(`${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`, x, y + h / 2 + 44);
             }
             return;
           }
 
-          const radius = nodeRadius(graphNode);
-          const isHovered = hoveredId === graphNode.id;
-          const accent = roleColor(graphNode.role);
+          const radius = 20;
+          const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
           const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
+          const fill = roleColor(graphNode.role);
 
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isHovered || isConnected ? "#52525b" : "#3f3f46";
+          ctx.fillStyle = fill;
+          ctx.globalAlpha = isConnected || isHovered ? 1 : 0.9;
           ctx.fill();
-          ctx.strokeStyle = isConnected ? "#f7d88a" : accent;
-          ctx.lineWidth = isHovered ? 2 : 1.5;
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = "rgba(255,255,255,0.75)";
+          ctx.lineWidth = isHovered ? 2.5 : 1.2;
           ctx.stroke();
 
-          const initialsText = initials(graphNode.name);
-          const initialsSize = Math.max(9, 10 / globalScale);
-          ctx.fillStyle = "#f4f4f5";
-          ctx.font = `700 ${initialsSize}px IBM Plex Sans, sans-serif`;
+          ctx.fillStyle = "#ffffff";
           ctx.textAlign = "center";
-          ctx.fillText(initialsText, x, y + 3);
-
-          const labelText = `${shortName(graphNode.name)} • ${graphNode.role ?? "Person"}`;
-          const labelSize = Math.max(10, 11 / globalScale);
-          ctx.font = `600 ${labelSize}px IBM Plex Sans, sans-serif`;
-          const textWidth = ctx.measureText(labelText).width;
-          const chipPaddingX = 8;
-          const chipHeight = labelSize + 8;
-          const chipWidth = textWidth + chipPaddingX * 2;
-          const chipX = x - chipWidth / 2;
-          const chipY = y + radius + 8;
-
-          ctx.fillStyle = "rgba(15,23,42,0.82)";
-          ctx.beginPath();
-          ctx.roundRect(chipX, chipY, chipWidth, chipHeight, 8);
-          ctx.fill();
-          ctx.strokeStyle = `${accent}88`;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.fillStyle = isConnected ? "#f7d88a" : accent;
-          ctx.textAlign = "center";
-          ctx.fillText(labelText, x, chipY + chipHeight - 6);
+          ctx.font = `700 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
+          ctx.fillText(initials(graphNode.name), x, y + 4);
         }}
       />
+
+      {tooltip?.nodeId && (() => {
+        const node = nodeById.get(tooltip.nodeId);
+        if (!node) return null;
+
+        if (node.type === "person") {
+          return (
+            <div
+              className="pointer-events-none absolute z-40 transition-opacity duration-200"
+              style={{ left: tooltip.x, top: tooltip.y - 42, transform: "translate(-50%, -100%)" }}
+            >
+              <div className="rounded-lg border border-zinc-600 bg-zinc-950/90 px-3 py-2 text-xs text-white shadow-2xl backdrop-blur">
+                <p className="font-semibold">{node.name}</p>
+                <p className="text-zinc-300">{node.role}</p>
+              </div>
+            </div>
+          );
+        }
+
+        const director = getMovieDirectorName(node.id);
+        return (
+          <div
+            className="pointer-events-none absolute z-40 transition-opacity duration-200"
+            style={{ left: tooltip.x, top: tooltip.y - 24, transform: "translate(-50%, -100%)" }}
+          >
+            <div className="flex w-64 gap-3 rounded-xl border border-zinc-700 bg-zinc-950/90 p-3 text-xs text-white shadow-2xl backdrop-blur">
+              <div className="h-[90px] w-[60px] overflow-hidden rounded-md bg-zinc-800">
+                {node.posterPath ? (
+                  <Image
+                    src={`${IMAGE_BASE}${node.posterPath}`}
+                    alt={node.title ?? "Poster"}
+                    width={60}
+                    height={90}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{node.title}</p>
+                <p className="text-zinc-300">{node.year ?? "N/A"} • {node.rating?.toFixed(1) ?? "N/A"}</p>
+                <p className="mt-1 truncate text-zinc-300">Director: {director}</p>
+                <p className="mt-2 text-[#c9a84c]">Click to explore</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

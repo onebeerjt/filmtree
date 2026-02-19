@@ -79,7 +79,7 @@ function getYear(releaseDate?: string) {
 function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
   const people = new Map<number, PersonCredit>();
 
-  const topCast = [...credits.cast].sort((a, b) => a.order - b.order).slice(0, 5);
+  const topCast = [...credits.cast].sort((a, b) => a.order - b.order).slice(0, 7);
   for (const cast of topCast) {
     people.set(cast.id, {
       id: cast.id,
@@ -165,7 +165,8 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
     corePeople.map(async (person) => {
       const movieCredits = await getPersonMovieCredits(person.id);
       const merged = [...movieCredits.cast, ...movieCredits.crew];
-      return { person, relatedMovies: selectNotableMovies(merged, centerMovie.id, 4) };
+      const perPersonLimit = person.role === "Actor" ? 6 : 8;
+      return { person, relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit) };
     })
   );
 

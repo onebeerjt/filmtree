@@ -231,6 +231,29 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
     };
   }, [nodes, links]);
 
+  const { connectedNodeIds, connectedLinkKeys } = useMemo(() => {
+    if (!hoveredId) {
+      return {
+        connectedNodeIds: new Set<string>(),
+        connectedLinkKeys: new Set<string>()
+      };
+    }
+
+    const nodeSet = new Set<string>([hoveredId]);
+    const linkSet = new Set<string>();
+    for (const link of graphData.links) {
+      const source = String(link.source);
+      const target = String(link.target);
+      if (source === hoveredId || target === hoveredId) {
+        nodeSet.add(source);
+        nodeSet.add(target);
+        linkSet.add(`${source}->${target}`);
+      }
+    }
+
+    return { connectedNodeIds: nodeSet, connectedLinkKeys: linkSet };
+  }, [graphData.links, hoveredId]);
+
   useEffect(() => {
     function updateViewport() {
       setViewport({
@@ -264,8 +287,16 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         maxZoom={8}
         enableNodeDrag={false}
         enablePointerInteraction
-        linkWidth={1.2}
-        linkColor={() => "rgba(255,255,255,0.24)"}
+        linkWidth={(link) => {
+          const source = String((link as PositionedLink).source);
+          const target = String((link as PositionedLink).target);
+          return connectedLinkKeys.has(`${source}->${target}`) ? 2.4 : 1;
+        }}
+        linkColor={(link) => {
+          const source = String((link as PositionedLink).source);
+          const target = String((link as PositionedLink).target);
+          return connectedLinkKeys.has(`${source}->${target}`) ? "rgba(247,216,138,0.72)" : "rgba(255,255,255,0.18)";
+        }}
         nodePointerAreaPaint={(node, color, ctx) => {
           const graphNode = node as PositionedNode;
           const x = graphNode.x;
@@ -296,11 +327,12 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           if (graphNode.type === "movie") {
             const size = nodeRadius(graphNode);
             const isHovered = hoveredId === graphNode.id;
+            const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
 
-            if (isHovered) {
+            if (isHovered || isConnected) {
               ctx.beginPath();
               ctx.arc(x, y, size + 9, 0, 2 * Math.PI);
-              ctx.fillStyle = "rgba(247,216,138,0.28)";
+              ctx.fillStyle = isHovered ? "rgba(247,216,138,0.33)" : "rgba(247,216,138,0.2)";
               ctx.fill();
             }
 
@@ -327,11 +359,11 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
             ctx.beginPath();
             ctx.arc(x, y, size, 0, 2 * Math.PI);
-            ctx.strokeStyle = graphNode.isCenter ? "#f7d88a" : "rgba(255,255,255,0.78)";
+            ctx.strokeStyle = graphNode.isCenter || isConnected ? "#f7d88a" : "rgba(255,255,255,0.62)";
             ctx.lineWidth = graphNode.isCenter ? 4 : 2;
             ctx.stroke();
 
-            const showTitle = graphNode.isCenter || isHovered;
+            const showTitle = graphNode.isCenter || isHovered || isConnected;
             if (showTitle) {
               const fontSize = Math.max(11, 14 / globalScale);
               const subtitleSize = Math.max(10, 11 / globalScale);
@@ -352,12 +384,13 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           const radius = nodeRadius(graphNode);
           const isHovered = hoveredId === graphNode.id;
           const accent = roleColor(graphNode.role);
+          const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
 
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isHovered ? "#52525b" : "#3f3f46";
+          ctx.fillStyle = isHovered || isConnected ? "#52525b" : "#3f3f46";
           ctx.fill();
-          ctx.strokeStyle = accent;
+          ctx.strokeStyle = isConnected ? "#f7d88a" : accent;
           ctx.lineWidth = isHovered ? 2 : 1.5;
           ctx.stroke();
 
@@ -386,7 +419,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           ctx.lineWidth = 1;
           ctx.stroke();
 
-          ctx.fillStyle = accent;
+          ctx.fillStyle = isConnected ? "#f7d88a" : accent;
           ctx.textAlign = "center";
           ctx.fillText(labelText, x, chipY + chipHeight - 6);
         }}

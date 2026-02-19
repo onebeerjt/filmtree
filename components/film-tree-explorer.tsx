@@ -11,7 +11,7 @@ type CacheEnvelope<T> = {
 };
 
 const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
-const TREE_CACHE_VERSION = "v5";
+const TREE_CACHE_VERSION = "v6";
 
 function getTreeCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;

@@ -134,9 +134,10 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const [centerMovie, credits] = await Promise.all([getMovieDetails(movieId), getMovieCredits(movieId)]);
   const corePeople = pickCorePeople(credits);
 
+  const centerNodeId = `movie-${centerMovie.id}`;
   const nodes: FilmTreeResponse["nodes"] = [
     {
-      id: `movie-${centerMovie.id}`,
+      id: centerNodeId,
       tmdbId: centerMovie.id,
       type: "movie",
       ring: 0,
@@ -151,47 +152,42 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   ];
 
   const links: FilmTreeResponse["links"] = [];
-  const movieIdsAdded = new Set<number>([centerMovie.id]);
-
   const relatedMoviesByPerson = await Promise.all(
     corePeople.map(async (person) => {
       const movieCredits = await getPersonMovieCredits(person.id);
       const merged = [...movieCredits.cast, ...movieCredits.crew];
-      return {
-        person,
-        relatedMovies: selectNotableMovies(merged, centerMovie.id, 4)
-      };
+      return { person, relatedMovies: selectNotableMovies(merged, centerMovie.id, 4) };
     })
   );
 
   const peopleCount = relatedMoviesByPerson.length || 1;
+  const personRingRadius = 420;
+  const personNodes: FilmTreeResponse["nodes"] = [];
+  const movieNodeById = new Map<number, FilmTreeResponse["nodes"][number]>();
 
   for (const [personIndex, { person, relatedMovies }] of relatedMoviesByPerson.entries()) {
     const personNodeId = `person-${person.id}`;
-    const personAngle = (Math.PI * 2 * personIndex) / peopleCount;
-    const personRadius = 260;
+    const angle = (Math.PI * 2 * personIndex) / peopleCount - Math.PI / 2;
 
-    nodes.push({
+    personNodes.push({
       id: personNodeId,
       tmdbId: person.id,
       type: "person",
       ring: 1,
       name: person.name,
       role: person.role,
-      x: Math.cos(personAngle) * personRadius,
-      y: Math.sin(personAngle) * personRadius
+      x: Math.cos(angle) * personRingRadius,
+      y: Math.sin(angle) * personRingRadius
     });
 
     links.push({
-      source: `movie-${centerMovie.id}`,
+      source: centerNodeId,
       target: personNodeId
     });
 
-    for (const [movieIndex, movie] of relatedMovies.entries()) {
-      if (!movieIdsAdded.has(movie.id)) {
-        const movieAngle = personAngle + (movieIndex - (relatedMovies.length - 1) / 2) * 0.35;
-        const movieRadius = 560 + movieIndex * 22;
-        nodes.push({
+    for (const movie of relatedMovies) {
+      if (!movieNodeById.has(movie.id)) {
+        movieNodeById.set(movie.id, {
           id: `movie-${movie.id}`,
           tmdbId: movie.id,
           type: "movie",
@@ -200,11 +196,8 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
           year: getYear(movie.release_date),
           rating: Number((movie.vote_average ?? 0).toFixed(1)),
           posterPath: movie.poster_path,
-          isCenter: false,
-          x: Math.cos(movieAngle) * movieRadius,
-          y: Math.sin(movieAngle) * movieRadius
+          isCenter: false
         });
-        movieIdsAdded.add(movie.id);
       }
 
       links.push({
@@ -213,6 +206,18 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
       });
     }
   }
+
+  const secondRingMovies = [...movieNodeById.values()];
+  const movieCount = secondRingMovies.length || 1;
+  const movieRingRadius = Math.max(980, movieCount * 52);
+
+  for (const [movieIndex, movieNode] of secondRingMovies.entries()) {
+    const angle = (Math.PI * 2 * movieIndex) / movieCount - Math.PI / 2;
+    movieNode.x = Math.cos(angle) * movieRingRadius;
+    movieNode.y = Math.sin(angle) * movieRingRadius;
+  }
+
+  nodes.push(...personNodes, ...secondRingMovies);
 
   return {
     centerMovieId: centerMovie.id,

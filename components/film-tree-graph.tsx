@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { forceCollide, forceRadial, forceX, forceY } from "d3-force";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 import { GraphNode, GraphLink } from "@/lib/types";
 
@@ -19,21 +18,6 @@ type Props = {
   onMovieClick: (movieId: number) => void;
 };
 
-type ForceCharge = {
-  strength: (value: number) => void;
-  distanceMax: (value: number) => void;
-};
-
-type ForceLink = {
-  distance: (fn: (link: GraphLinkWithResolvedNodes) => number) => void;
-  strength: (fn: (link: GraphLinkWithResolvedNodes) => number) => void;
-};
-
-type GraphLinkWithResolvedNodes = {
-  source: GraphNode;
-  target: GraphNode;
-};
-
 function loadImage(src: string) {
   const cached = imageCache.get(src);
   if (cached) return cached;
@@ -46,21 +30,25 @@ function loadImage(src: string) {
 }
 
 function nodeRadius(node: GraphNode) {
-  if (node.type === "person") return 18;
-  return node.isCenter ? 54 : 35;
-}
-
-function ringRadius(node: GraphNode) {
-  if (node.ring === 1) return 270;
-  if (node.ring === 2) return 620;
-  return 0;
+  if (node.type === "person") return 20;
+  return node.isCenter ? 58 : 39;
 }
 
 export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
-  const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
   const graphRef = useRef<ForceGraphMethods>();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ width: 1200, height: 800 });
+
+  const graphData = useMemo(() => {
+    return {
+      nodes: nodes.map((node) => ({
+        ...node,
+        fx: node.x,
+        fy: node.y
+      })),
+      links
+    };
+  }, [nodes, links]);
 
   useEffect(() => {
     function updateViewport() {
@@ -78,46 +66,8 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
-
-    const charge = fg.d3Force("charge") as ForceCharge | undefined;
-    if (charge) {
-      charge.strength(-950);
-      charge.distanceMax(3200);
-    }
-
-    const link = fg.d3Force("link") as ForceLink | undefined;
-    if (link) {
-      link.distance((linkValue) => {
-        const source = linkValue.source;
-        const target = linkValue.target;
-        const movieToPerson = source.type !== target.type;
-        return movieToPerson ? 260 : 420;
-      });
-      link.strength((linkValue) => {
-        const source = linkValue.source;
-        const target = linkValue.target;
-        return source.type !== target.type ? 0.9 : 0.58;
-      });
-    }
-
-    fg.d3Force(
-      "collide",
-      forceCollide((node) => nodeRadius(node as GraphNode) + 22).strength(1).iterations(5)
-    );
-    fg.d3Force(
-      "ring",
-      forceRadial((node) => ringRadius(node as GraphNode), 0, 0).strength(0.23)
-    );
-    fg.d3Force("x", forceX(0).strength(0.02));
-    fg.d3Force("y", forceY(0).strength(0.02));
-
-    fg.d3ReheatSimulation();
-    setTimeout(() => {
-      if (fg.zoomToFit) {
-        fg.zoomToFit(700, 100);
-      }
-    }, 450);
-  }, [nodes, links]);
+    setTimeout(() => fg.zoomToFit?.(650, 170), 20);
+  }, [graphData]);
 
   return (
     <div className="h-full w-full">
@@ -127,25 +77,20 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         width={viewport.width}
         height={viewport.height}
         backgroundColor="rgba(0,0,0,0)"
-        nodeRelSize={6}
-        linkWidth={1.6}
-        linkColor={() => "rgba(255,255,255,0.28)"}
-        cooldownTicks={220}
-        warmupTicks={90}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.17}
-        minZoom={0.25}
-        maxZoom={7}
-        nodeVal={(node) => {
-          const graphNode = node as GraphNode;
-          const r = nodeRadius(graphNode);
-          return (r * r) / 25;
-        }}
+        nodeRelSize={1}
+        cooldownTicks={0}
+        minZoom={0.12}
+        maxZoom={8}
+        enableNodeDrag={false}
+        enablePointerInteraction
+        linkWidth={1.2}
+        linkColor={() => "rgba(255,255,255,0.24)"}
         nodePointerAreaPaint={(node, color, ctx) => {
           const graphNode = node as GraphNode;
           const x = graphNode.x ?? 0;
           const y = graphNode.y ?? 0;
           const r = nodeRadius(graphNode) + 8;
+
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -157,10 +102,10 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         }}
         onNodeClick={(node) => {
           const graphNode = node as GraphNode;
-          if (graphNode.type === "movie") {
-            graphRef.current?.centerAt(graphNode.x ?? 0, graphNode.y ?? 0, 250);
-            onMovieClick(graphNode.tmdbId);
-          }
+          if (graphNode.type !== "movie") return;
+
+          graphRef.current?.centerAt(graphNode.x ?? 0, graphNode.y ?? 0, 240);
+          onMovieClick(graphNode.tmdbId);
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const graphNode = node as GraphNode;
@@ -173,8 +118,8 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
             if (isHovered) {
               ctx.beginPath();
-              ctx.arc(x, y, size + 8, 0, 2 * Math.PI);
-              ctx.fillStyle = "rgba(247,216,138,0.25)";
+              ctx.arc(x, y, size + 9, 0, 2 * Math.PI);
+              ctx.fillStyle = "rgba(247,216,138,0.28)";
               ctx.fill();
             }
 
@@ -201,29 +146,25 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
             ctx.beginPath();
             ctx.arc(x, y, size, 0, 2 * Math.PI);
-            ctx.strokeStyle = graphNode.isCenter ? "#f7d88a" : "rgba(255,255,255,0.76)";
-            ctx.lineWidth = graphNode.isCenter ? 4 : 1.8;
+            ctx.strokeStyle = graphNode.isCenter ? "#f7d88a" : "rgba(255,255,255,0.78)";
+            ctx.lineWidth = graphNode.isCenter ? 4 : 2;
             ctx.stroke();
 
-            const fontSize = Math.max(11, 14 / globalScale);
-            const subtitleSize = Math.max(10, 11 / globalScale);
-            const showTitle = graphNode.isCenter || isHovered || globalScale > 1.3;
-            const showSubtitle = graphNode.isCenter || isHovered || globalScale > 2.4;
-
+            const showTitle = graphNode.isCenter || isHovered;
             if (showTitle) {
+              const fontSize = Math.max(11, 14 / globalScale);
+              const subtitleSize = Math.max(10, 11 / globalScale);
+
               ctx.fillStyle = "#f5f5f5";
               ctx.font = `700 ${fontSize}px IBM Plex Sans, sans-serif`;
               ctx.textAlign = "center";
               ctx.fillText(graphNode.title ?? "Untitled", x, y + size + fontSize + 7);
-            }
 
-            if (showSubtitle) {
               const subtitle = `${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`;
               ctx.fillStyle = "#c9c9ce";
               ctx.font = `500 ${subtitleSize}px IBM Plex Sans, sans-serif`;
               ctx.fillText(subtitle, x, y + size + fontSize + subtitleSize + 10);
             }
-
             return;
           }
 
@@ -232,20 +173,19 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = isHovered ? "#6b7280" : "#3f3f46";
+          ctx.fillStyle = isHovered ? "#71717a" : "#3f3f46";
           ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.62)";
+          ctx.strokeStyle = "rgba(255,255,255,0.65)";
           ctx.lineWidth = 1.2;
           ctx.stroke();
 
-          const showLabel = isHovered || globalScale > 2.1;
-          if (showLabel) {
+          if (isHovered) {
             const label = `${graphNode.name} (${graphNode.role})`;
-            const fontSize = Math.max(10, 12 / globalScale);
+            const fontSize = Math.max(11, 13 / globalScale);
             ctx.font = `500 ${fontSize}px IBM Plex Sans, sans-serif`;
             ctx.fillStyle = "#d4d4d8";
             ctx.textAlign = "left";
-            ctx.fillText(label, x + radius + 7, y + 4);
+            ctx.fillText(label, x + radius + 8, y + 4);
           }
         }}
       />

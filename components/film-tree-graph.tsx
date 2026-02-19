@@ -41,9 +41,15 @@ function loadImage(src: string) {
   return img;
 }
 
+function movieSize(node: GraphNode) {
+  if (node.isCenter) return { w: 94, h: 142 };
+  return { w: 70, h: 105 };
+}
+
 function nodeRadius(node: GraphNode) {
   if (node.type === "person") return 18;
-  return node.isCenter ? 52 : 31;
+  const { w, h } = movieSize(node);
+  return Math.hypot(w / 2, h / 2);
 }
 
 function initials(name?: string) {
@@ -73,11 +79,15 @@ function shortName(name?: string) {
   return `${name.slice(0, 17)}…`;
 }
 
-function getLinkedMovieIds(personId: string, links: GraphLink[]) {
-  return links
-    .filter((link) => link.source === personId)
-    .map((link) => String(link.target))
-    .filter((targetId) => targetId.startsWith("movie-"));
+function getNeighbors(nodeId: string, links: GraphLink[]) {
+  const neighbors = new Set<string>();
+  for (const link of links) {
+    const source = String(link.source);
+    const target = String(link.target);
+    if (source === nodeId) neighbors.add(target);
+    if (target === nodeId) neighbors.add(source);
+  }
+  return [...neighbors];
 }
 
 const ROLE_WEIGHT: Record<string, number> = {
@@ -87,7 +97,7 @@ const ROLE_WEIGHT: Record<string, number> = {
   Actor: 3
 };
 
-function resolveCollisions(nodes: PositionedNode[], iterations = 140) {
+function resolveCollisions(nodes: PositionedNode[], iterations = 160) {
   const mutable = nodes.map((node) => ({ ...node }));
 
   for (let i = 0; i < iterations; i += 1) {
@@ -122,9 +132,9 @@ function resolveCollisions(nodes: PositionedNode[], iterations = 140) {
   return mutable.map((node) => ({ ...node, fx: node.x, fy: node.y }));
 }
 
-function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
-  const center = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
-  if (!center) {
+function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string | null): PositionedNode[] {
+  const defaultCenter = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
+  if (!defaultCenter) {
     return nodes.map((node) => ({
       ...node,
       x: node.x ?? 0,
@@ -135,73 +145,67 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
   }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const personNodes = nodes.filter((node) => node.type === "person");
-  const sortedPeople = [...personNodes].sort((a, b) => {
+  const hub = (focusNodeId ? nodeById.get(focusNodeId) : null) ?? defaultCenter;
+  const allNodes = [...nodeById.values()];
+  const sortedNodes = [...allNodes].sort((a, b) => {
     const roleDiff = (ROLE_WEIGHT[a.role ?? "Actor"] ?? 10) - (ROLE_WEIGHT[b.role ?? "Actor"] ?? 10);
     if (roleDiff !== 0) return roleDiff;
-    return (a.name ?? "").localeCompare(b.name ?? "");
+    return (a.name ?? a.title ?? "").localeCompare(b.name ?? b.title ?? "");
   });
 
   const placed = new Map<string, PositionedNode>();
-  placed.set(center.id, {
-    ...center,
+  placed.set(hub.id, {
+    ...hub,
     x: 0,
     y: 0,
     fx: 0,
     fy: 0
   });
 
-  const peopleRadius = 220;
-  const peopleCount = sortedPeople.length || 1;
-  sortedPeople.forEach((person, idx) => {
-    const angle = (Math.PI * 2 * idx) / peopleCount - Math.PI / 2;
-    const x = Math.cos(angle) * peopleRadius;
-    const y = Math.sin(angle) * peopleRadius;
-    placed.set(person.id, {
-      ...person,
-      x,
-      y,
-      fx: x,
-      fy: y
+  const firstHop = getNeighbors(hub.id, links)
+    .map((id) => nodeById.get(id))
+    .filter((node): node is GraphNode => Boolean(node))
+    .sort((a, b) => {
+      const roleDiff = (ROLE_WEIGHT[a.role ?? "Actor"] ?? 10) - (ROLE_WEIGHT[b.role ?? "Actor"] ?? 10);
+      if (roleDiff !== 0) return roleDiff;
+      return (a.name ?? a.title ?? "").localeCompare(b.name ?? b.title ?? "");
     });
+
+  const firstRingRadius = hub.type === "movie" ? 220 : 260;
+  const firstCount = firstHop.length || 1;
+  const firstAngles = new Map<string, number>();
+  firstHop.forEach((node, idx) => {
+    const angle = (Math.PI * 2 * idx) / firstCount - Math.PI / 2;
+    firstAngles.set(node.id, angle);
+    const x = Math.cos(angle) * firstRingRadius;
+    const y = Math.sin(angle) * firstRingRadius;
+    placed.set(node.id, { ...node, x, y, fx: x, fy: y });
   });
 
-  const seenMovies = new Set<string>([center.id]);
-  sortedPeople.forEach((person, personIdx) => {
-    const relatedMovieIds = getLinkedMovieIds(person.id, links)
-      .filter((movieId) => !seenMovies.has(movieId))
-      .filter((movieId) => nodeById.has(movieId));
+  const seen = new Set<string>([hub.id, ...firstHop.map((n) => n.id)]);
+  for (const neighbor of firstHop) {
+    const neighborAngle = firstAngles.get(neighbor.id) ?? 0;
+    const secondHop = getNeighbors(neighbor.id, links)
+      .filter((id) => !seen.has(id))
+      .map((id) => nodeById.get(id))
+      .filter((node): node is GraphNode => Boolean(node));
 
-    const personPosition = placed.get(person.id);
-    const anchorX = personPosition?.x ?? 0;
-    const anchorY = personPosition?.y ?? 0;
-    const branchCenterAngle = Math.atan2(anchorY, anchorX);
-    const movieOrbitRadius = 390 + personIdx * 8;
-    const spread = 0.5;
-    const startAngle = branchCenterAngle - ((relatedMovieIds.length - 1) * spread) / 2;
-
-    relatedMovieIds.forEach((movieId, movieIdx) => {
-      seenMovies.add(movieId);
-      const movieNode = nodeById.get(movieId);
-      if (!movieNode) return;
-
-      const angle = startAngle + movieIdx * spread;
-      const x = Math.cos(angle) * movieOrbitRadius;
-      const y = Math.sin(angle) * movieOrbitRadius;
-      placed.set(movieId, {
-        ...movieNode,
-        x,
-        y,
-        fx: x,
-        fy: y
-      });
+    const spread = 0.42;
+    const startAngle = neighborAngle - ((secondHop.length - 1) * spread) / 2;
+    secondHop.forEach((node, idx) => {
+      seen.add(node.id);
+      const angle = startAngle + idx * spread;
+      const radius = 400 + idx * 6;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      placed.set(node.id, { ...node, x, y, fx: x, fy: y });
     });
-  });
+  }
 
-  const leftovers = nodes.filter((node) => !placed.has(node.id));
+  const leftovers = sortedNodes.filter((node) => !placed.has(node.id));
   leftovers.forEach((node, idx) => {
     const angle = (Math.PI * 2 * idx) / Math.max(leftovers.length, 1);
-    const radius = 430 + Math.floor(idx / 8) * 70;
+    const radius = 470 + Math.floor(idx / 10) * 60;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
     placed.set(node.id, {
@@ -219,17 +223,23 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
 export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   const graphRef = useRef<ForceGraphMethods>();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ width: 1200, height: 800 });
+
+  useEffect(() => {
+    const center = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
+    setFocusNodeId(center?.id ?? null);
+  }, [nodes]);
 
   const graphData = useMemo(() => {
     return {
-      nodes: layoutNodes(nodes, links),
+      nodes: layoutNodes(nodes, links, focusNodeId),
       links: links.map((link) => ({
         source: String(link.source),
         target: String(link.target)
       })) as PositionedLink[]
     };
-  }, [nodes, links]);
+  }, [nodes, links, focusNodeId]);
 
   const { connectedNodeIds, connectedLinkKeys } = useMemo(() => {
     if (!hoveredId) {
@@ -301,12 +311,16 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           const graphNode = node as PositionedNode;
           const x = graphNode.x;
           const y = graphNode.y;
-          const r = nodeRadius(graphNode) + 8;
-
           ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, 2 * Math.PI);
-          ctx.fill();
+          if (graphNode.type === "movie") {
+            const { w, h } = movieSize(graphNode);
+            ctx.fillRect(x - w / 2 - 8, y - h / 2 - 8, w + 16, h + 16);
+          } else {
+            const r = nodeRadius(graphNode) + 8;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fill();
+          }
         }}
         onNodeHover={(node) => {
           const graphNode = node as PositionedNode | null;
@@ -314,6 +328,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         }}
         onNodeClick={(node) => {
           const graphNode = node as PositionedNode;
+          setFocusNodeId(graphNode.id);
           graphRef.current?.centerAt(graphNode.x, graphNode.y, 260);
           if (graphNode.type === "movie") {
             onMovieClick(graphNode.tmdbId);
@@ -325,58 +340,56 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           const y = graphNode.y;
 
           if (graphNode.type === "movie") {
-            const size = nodeRadius(graphNode);
+            const { w, h } = movieSize(graphNode);
             const isHovered = hoveredId === graphNode.id;
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
 
             if (isHovered || isConnected) {
-              ctx.beginPath();
-              ctx.arc(x, y, size + 9, 0, 2 * Math.PI);
               ctx.fillStyle = isHovered ? "rgba(247,216,138,0.33)" : "rgba(247,216,138,0.2)";
-              ctx.fill();
+              ctx.fillRect(x - w / 2 - 6, y - h / 2 - 6, w + 12, h + 12);
             }
 
             ctx.save();
             ctx.beginPath();
-            ctx.arc(x, y, size, 0, 2 * Math.PI);
+            ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
             ctx.closePath();
             ctx.clip();
 
             if (graphNode.posterPath) {
               const image = loadImage(`${IMAGE_BASE}${graphNode.posterPath}`);
               if (image.complete) {
-                ctx.drawImage(image, x - size, y - size, size * 2, size * 2);
+                ctx.drawImage(image, x - w / 2, y - h / 2, w, h);
               } else {
                 ctx.fillStyle = "#1f2937";
-                ctx.fillRect(x - size, y - size, size * 2, size * 2);
+                ctx.fillRect(x - w / 2, y - h / 2, w, h);
               }
             } else {
               ctx.fillStyle = "#1f2937";
-              ctx.fillRect(x - size, y - size, size * 2, size * 2);
+              ctx.fillRect(x - w / 2, y - h / 2, w, h);
             }
 
             ctx.restore();
 
             ctx.beginPath();
-            ctx.arc(x, y, size, 0, 2 * Math.PI);
+            ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
             ctx.strokeStyle = graphNode.isCenter || isConnected ? "#f7d88a" : "rgba(255,255,255,0.62)";
-            ctx.lineWidth = graphNode.isCenter ? 4 : 2;
+            ctx.lineWidth = graphNode.isCenter ? 3 : 1.6;
             ctx.stroke();
 
             const showTitle = graphNode.isCenter || isHovered || isConnected;
             if (showTitle) {
-              const fontSize = Math.max(11, 14 / globalScale);
+              const fontSize = Math.max(11, 13 / globalScale);
               const subtitleSize = Math.max(10, 11 / globalScale);
 
               ctx.fillStyle = "#f5f5f5";
               ctx.font = `700 ${fontSize}px IBM Plex Sans, sans-serif`;
               ctx.textAlign = "center";
-              ctx.fillText(graphNode.title ?? "Untitled", x, y + size + fontSize + 7);
+              ctx.fillText(graphNode.title ?? "Untitled", x, y + h / 2 + fontSize + 6);
 
               const subtitle = `${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`;
               ctx.fillStyle = "#c9c9ce";
               ctx.font = `500 ${subtitleSize}px IBM Plex Sans, sans-serif`;
-              ctx.fillText(subtitle, x, y + size + fontSize + subtitleSize + 10);
+              ctx.fillText(subtitle, x, y + h / 2 + fontSize + subtitleSize + 9);
             }
             return;
           }

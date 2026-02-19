@@ -11,6 +11,7 @@ type CacheEnvelope<T> = {
 };
 
 const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const TREE_CACHE_VERSION = "v4";
 
 function getTreeCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -44,7 +45,7 @@ export function FilmTreeExplorer() {
   const [error, setError] = useState<string | null>(null);
 
   async function fetchTree(movieId: number) {
-    const cacheKey = `film-tree:tree:${movieId}`;
+    const cacheKey = `film-tree:tree:${TREE_CACHE_VERSION}:${movieId}`;
     const cached = getTreeCache<FilmTreeResponse>(cacheKey);
 
     if (cached) {

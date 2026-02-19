@@ -18,6 +18,13 @@ type Props = {
   onMovieClick: (movieId: number) => void;
 };
 
+type PositionedNode = GraphNode & {
+  x: number;
+  y: number;
+  fx: number;
+  fy: number;
+};
+
 function loadImage(src: string) {
   const cached = imageCache.get(src);
   if (cached) return cached;
@@ -34,6 +41,135 @@ function nodeRadius(node: GraphNode) {
   return node.isCenter ? 58 : 39;
 }
 
+function getLinkedMovieIds(personId: string, links: GraphLink[]) {
+  return links
+    .filter((link) => link.source === personId)
+    .map((link) => String(link.target))
+    .filter((targetId) => targetId.startsWith("movie-"));
+}
+
+function layoutNodes(nodes: GraphNode[], links: GraphLink[]): PositionedNode[] {
+  const center = nodes.find((node) => node.type === "movie" && node.isCenter) ?? nodes.find((node) => node.type === "movie");
+  if (!center) {
+    return nodes.map((node) => ({
+      ...node,
+      x: node.x ?? 0,
+      y: node.y ?? 0,
+      fx: node.x ?? 0,
+      fy: node.y ?? 0
+    }));
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const personNodes = nodes.filter((node) => node.type === "person");
+  const sortedPeople = [...personNodes].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+
+  const placed = new Map<string, PositionedNode>();
+  placed.set(center.id, {
+    ...center,
+    x: 0,
+    y: 0,
+    fx: 0,
+    fy: 0
+  });
+
+  const peopleGapX = 290;
+  const peopleY = 390;
+  const peopleStartX = -((sortedPeople.length - 1) * peopleGapX) / 2;
+
+  sortedPeople.forEach((person, idx) => {
+    const x = peopleStartX + idx * peopleGapX;
+    const y = peopleY;
+    placed.set(person.id, {
+      ...person,
+      x,
+      y,
+      fx: x,
+      fy: y
+    });
+  });
+
+  const seenMovies = new Set<string>([center.id]);
+  sortedPeople.forEach((person, personIdx) => {
+    const relatedMovieIds = getLinkedMovieIds(person.id, links)
+      .filter((movieId) => !seenMovies.has(movieId))
+      .filter((movieId) => nodeById.has(movieId));
+
+    const localGapX = 260;
+    const branchStartX = (placed.get(person.id)?.x ?? 0) - ((relatedMovieIds.length - 1) * localGapX) / 2;
+    const branchY = 800 + personIdx * 320;
+
+    relatedMovieIds.forEach((movieId, movieIdx) => {
+      seenMovies.add(movieId);
+      const movieNode = nodeById.get(movieId);
+      if (!movieNode) return;
+
+      const x = branchStartX + movieIdx * localGapX;
+      const y = branchY;
+      placed.set(movieId, {
+        ...movieNode,
+        x,
+        y,
+        fx: x,
+        fy: y
+      });
+    });
+  });
+
+  const leftovers = nodes.filter((node) => !placed.has(node.id));
+  leftovers.forEach((node, idx) => {
+    const x = ((idx % 6) - 2.5) * 260;
+    const y = 800 + sortedPeople.length * 320 + Math.floor(idx / 6) * 320;
+    placed.set(node.id, {
+      ...node,
+      x,
+      y,
+      fx: x,
+      fy: y
+    });
+  });
+
+  const candidates = [...placed.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+  const resolved: PositionedNode[] = [];
+
+  for (const node of candidates) {
+    if (node.id === center.id) {
+      resolved.push(node);
+      continue;
+    }
+
+    let y = node.y;
+    let hasCollision = true;
+    let guard = 0;
+
+    while (hasCollision && guard < 120) {
+      hasCollision = false;
+      for (const other of resolved) {
+        const dx = node.x - other.x;
+        const dy = y - other.y;
+        const minDistance = nodeRadius(node) + nodeRadius(other) + 36;
+        if (Math.hypot(dx, dy) < minDistance) {
+          y = other.y + minDistance + 12;
+          hasCollision = true;
+        }
+      }
+      guard += 1;
+    }
+
+    resolved.push({
+      ...node,
+      y,
+      fy: y
+    });
+  }
+
+  return resolved.map((node) => ({
+    ...node,
+    fx: node.x,
+    fy: node.y
+  }));
+}
+
 export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   const graphRef = useRef<ForceGraphMethods>();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -41,11 +177,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
 
   const graphData = useMemo(() => {
     return {
-      nodes: nodes.map((node) => ({
-        ...node,
-        fx: node.x,
-        fy: node.y
-      })),
+      nodes: layoutNodes(nodes, links),
       links
     };
   }, [nodes, links]);
@@ -66,7 +198,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
-    setTimeout(() => fg.zoomToFit?.(650, 170), 20);
+    setTimeout(() => fg.zoomToFit?.(700, 200), 20);
   }, [graphData]);
 
   return (
@@ -79,16 +211,16 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
         backgroundColor="rgba(0,0,0,0)"
         nodeRelSize={1}
         cooldownTicks={0}
-        minZoom={0.12}
+        minZoom={0.08}
         maxZoom={8}
         enableNodeDrag={false}
         enablePointerInteraction
         linkWidth={1.2}
         linkColor={() => "rgba(255,255,255,0.24)"}
         nodePointerAreaPaint={(node, color, ctx) => {
-          const graphNode = node as GraphNode;
-          const x = graphNode.x ?? 0;
-          const y = graphNode.y ?? 0;
+          const graphNode = node as PositionedNode;
+          const x = graphNode.x;
+          const y = graphNode.y;
           const r = nodeRadius(graphNode) + 8;
 
           ctx.fillStyle = color;
@@ -97,20 +229,20 @@ export function FilmTreeGraph({ nodes, links, onMovieClick }: Props) {
           ctx.fill();
         }}
         onNodeHover={(node) => {
-          const graphNode = node as GraphNode | null;
+          const graphNode = node as PositionedNode | null;
           setHoveredId(graphNode?.id ?? null);
         }}
         onNodeClick={(node) => {
-          const graphNode = node as GraphNode;
+          const graphNode = node as PositionedNode;
           if (graphNode.type !== "movie") return;
 
-          graphRef.current?.centerAt(graphNode.x ?? 0, graphNode.y ?? 0, 240);
+          graphRef.current?.centerAt(graphNode.x, graphNode.y, 260);
           onMovieClick(graphNode.tmdbId);
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
-          const graphNode = node as GraphNode;
-          const x = graphNode.x ?? 0;
-          const y = graphNode.y ?? 0;
+          const graphNode = node as PositionedNode;
+          const x = graphNode.x;
+          const y = graphNode.y;
 
           if (graphNode.type === "movie") {
             const size = nodeRadius(graphNode);

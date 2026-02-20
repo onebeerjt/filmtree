@@ -7,18 +7,13 @@ type MovieDetails = MovieSummary & {
 };
 
 type CreditsResponse = {
-  cast: Array<{ id: number; name: string; order: number }>;
-  crew: Array<{ id: number; name: string; job: string; department: string }>;
+  cast: Array<{ id: number; name: string; order: number; profile_path: string | null }>;
+  crew: Array<{ id: number; name: string; job: string; department: string; profile_path: string | null }>;
 };
 
 type PersonMovieCreditsResponse = {
   cast: MovieSummary[];
   crew: MovieSummary[];
-};
-
-type PersonDetails = {
-  id: number;
-  profile_path: string | null;
 };
 
 function getApiKey() {
@@ -77,12 +72,6 @@ async function getPersonMovieCredits(personId: number) {
   });
 }
 
-async function getPersonDetails(personId: number) {
-  return tmdbFetch<PersonDetails>(`/person/${personId}`, {
-    language: "en-US"
-  });
-}
-
 function getYear(releaseDate?: string) {
   return releaseDate && releaseDate.length >= 4 ? releaseDate.slice(0, 4) : "N/A";
 }
@@ -95,7 +84,8 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
     people.set(cast.id, {
       id: cast.id,
       name: cast.name,
-      role: "Actor"
+      role: "Actor",
+      profilePath: cast.profile_path
     });
   }
 
@@ -104,7 +94,8 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
     people.set(director.id, {
       id: director.id,
       name: director.name,
-      role: "Director"
+      role: "Director",
+      profilePath: director.profile_path
     });
   }
 
@@ -116,7 +107,8 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
     people.set(writer.id, {
       id: writer.id,
       name: writer.name,
-      role: "Writer"
+      role: "Writer",
+      profilePath: writer.profile_path
     });
   }
 
@@ -125,7 +117,8 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
     people.set(producer.id, {
       id: producer.id,
       name: producer.name,
-      role: "Producer"
+      role: "Producer",
+      profilePath: producer.profile_path
     });
   }
 
@@ -174,15 +167,11 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const links: FilmTreeResponse["links"] = [];
   const relatedMoviesByPerson = await Promise.all(
     corePeople.map(async (person) => {
-      const [movieCredits, personDetails] = await Promise.all([
-        getPersonMovieCredits(person.id),
-        getPersonDetails(person.id)
-      ]);
+      const movieCredits = await getPersonMovieCredits(person.id);
       const merged = [...movieCredits.cast, ...movieCredits.crew];
       const perPersonLimit = person.role === "Actor" ? 6 : 8;
       return {
         person,
-        profilePath: personDetails.profile_path,
         relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit)
       };
     })
@@ -193,7 +182,7 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const personNodes: FilmTreeResponse["nodes"] = [];
   const movieNodeById = new Map<number, FilmTreeResponse["nodes"][number]>();
 
-  for (const [personIndex, { person, profilePath, relatedMovies }] of relatedMoviesByPerson.entries()) {
+  for (const [personIndex, { person, relatedMovies }] of relatedMoviesByPerson.entries()) {
     const personNodeId = `person-${person.id}`;
     const angle = (Math.PI * 2 * personIndex) / peopleCount - Math.PI / 2;
 
@@ -204,7 +193,7 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
       ring: 1,
       name: person.name,
       role: person.role,
-      profilePath,
+      profilePath: person.profilePath,
       x: Math.cos(angle) * personRingRadius,
       y: Math.sin(angle) * personRingRadius
     });

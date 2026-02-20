@@ -46,6 +46,8 @@ type CenterTransition = {
   startMs: number;
 };
 
+type CoordsEvent = MouseEvent | TouchEvent | PointerEvent;
+
 const ROLE_WEIGHT: Record<string, number> = {
   Director: 0,
   Producer: 1,
@@ -118,6 +120,25 @@ function nodeRadius(node: GraphNode) {
   if (node.type === "person") return 20;
   const size = filmSizeFromRating(node);
   return Math.hypot(size.w / 2, size.h / 2);
+}
+
+function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[]) {
+  let best: PositionedNode | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const node of nodes) {
+    const dx = x - node.x;
+    const dy = y - node.y;
+    const distance = Math.hypot(dx, dy);
+    const threshold = nodeRadius(node) + (node.type === "movie" ? 8 : 10);
+    if (distance > threshold) continue;
+    if (distance < bestDistance) {
+      best = node;
+      bestDistance = distance;
+    }
+  }
+
+  return best;
 }
 
 function getNeighbors(nodeId: string, links: GraphLink[]) {
@@ -388,6 +409,49 @@ export function FilmTreeGraph({
     return directors[0] ?? "Unknown";
   }
 
+  function activateNode(graphNode: PositionedNode) {
+    setFocusNodeId(graphNode.id);
+    onExploreStep?.(graphNode);
+    graphRef.current?.centerAt(graphNode.x, graphNode.y, 600);
+
+    const fg = graphRef.current as ForceGraphMethods & {
+      graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+    };
+    if (fg?.graph2ScreenCoords) {
+      const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
+      setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
+    }
+
+    if (graphNode.type !== "movie") {
+      setTappedNodeId(graphNode.id);
+      return;
+    }
+
+    if (isTouch && tappedNodeId !== graphNode.id) {
+      setTappedNodeId(graphNode.id);
+      return;
+    }
+
+    setTappedNodeId(graphNode.id);
+    onMovieClick(graphNode.tmdbId);
+  }
+
+  function resolvePointerToNode(event: CoordsEvent) {
+    const fg = graphRef.current as ForceGraphMethods & {
+      screen2GraphCoords?: (x: number, y: number) => { x: number; y: number };
+    };
+    if (!fg?.screen2GraphCoords) return null;
+
+    const anyEvent = event as MouseEvent & { clientX?: number; clientY?: number };
+    if (typeof anyEvent.clientX !== "number" || typeof anyEvent.clientY !== "number") return null;
+
+    const canvas = (event.target as HTMLElement | null)?.closest("canvas");
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const graphPt = fg.screen2GraphCoords(anyEvent.clientX - rect.left, anyEvent.clientY - rect.top);
+    return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes);
+  }
+
   return (
     <div className="h-full w-full">
       <ForceGraph2D
@@ -413,7 +477,7 @@ export function FilmTreeGraph({
             (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
 
           if (hoveredNode?.type === "person") {
-            return connectedLinkKeys.has(key) ? 2.5 : 0.8;
+            return connectedLinkKeys.has(key) ? 3.2 : 0.25;
           }
 
           return isCenterToPerson ? 2.1 : 1.1;
@@ -430,7 +494,7 @@ export function FilmTreeGraph({
             (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
 
           if (hoveredNode?.type === "person") {
-            return connectedLinkKeys.has(key) ? `${baseColor}E6` : "rgba(255,255,255,0.10)";
+            return connectedLinkKeys.has(key) ? `${baseColor}FF` : "rgba(255,255,255,0.04)";
           }
 
           if (isCenterToPerson) return `${baseColor}CC`;
@@ -469,31 +533,13 @@ export function FilmTreeGraph({
           setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
         }}
         onNodeClick={(node) => {
-          const graphNode = node as PositionedNode;
-          setFocusNodeId(graphNode.id);
-          onExploreStep?.(graphNode);
-          graphRef.current?.centerAt(graphNode.x, graphNode.y, 600);
-
-          const fg = graphRef.current as ForceGraphMethods & {
-            graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
-          };
-          if (fg?.graph2ScreenCoords) {
-            const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
-            setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
+          activateNode(node as PositionedNode);
+        }}
+        onBackgroundClick={(event) => {
+          const fallbackNode = resolvePointerToNode(event as CoordsEvent);
+          if (fallbackNode) {
+            activateNode(fallbackNode);
           }
-
-          if (graphNode.type !== "movie") {
-            setTappedNodeId(graphNode.id);
-            return;
-          }
-
-          if (isTouch && tappedNodeId !== graphNode.id) {
-            setTappedNodeId(graphNode.id);
-            return;
-          }
-
-          setTappedNodeId(graphNode.id);
-          onMovieClick(graphNode.tmdbId);
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const graphNode = node as PositionedNode;

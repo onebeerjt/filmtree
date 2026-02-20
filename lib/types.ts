@@ -12,6 +12,7 @@ export type PersonCredit = {
   id: number;
   name: string;
   role: string;
+  profilePath?: string | null;
 };
 
 export type GraphNode = {

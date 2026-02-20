@@ -290,8 +290,8 @@ export function FilmTreeGraph({
     const sorted = [...laidOut].sort((a, b) => {
       if (!a.isCenter && b.isCenter) return -1;
       if (a.isCenter && !b.isCenter) return 1;
-      if (a.type === "movie" && b.type === "person") return -1;
-      if (a.type === "person" && b.type === "movie") return 1;
+      if (a.type === "person" && b.type === "movie") return -1;
+      if (a.type === "movie" && b.type === "person") return 1;
       return 0;
     });
 
@@ -443,12 +443,10 @@ export function FilmTreeGraph({
           ctx.fillStyle = color;
           if (graphNode.type === "movie") {
             const { w, h } = filmSizeFromRating(graphNode);
-            ctx.beginPath();
-            ctx.roundRect(x - w / 2 - 14, y - h / 2 - 14, w + 28, h + 28, 14);
-            ctx.fill();
+            ctx.fillRect(x - w / 2 - 14, y - h / 2 - 14, w + 28, h + 28);
           } else {
             ctx.beginPath();
-            ctx.arc(x, y, 34, 0, 2 * Math.PI);
+            ctx.arc(x, y, 22, 0, 2 * Math.PI);
             ctx.fill();
           }
         }}
@@ -601,21 +599,40 @@ export function FilmTreeGraph({
           const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
           const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
           const fill = roleColor(graphNode.role);
-
+          if (graphNode.profilePath) {
+            const image = loadImage(`${IMAGE_BASE}${graphNode.profilePath}`);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.closePath();
+            ctx.clip();
+            if (image.complete) {
+              ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
+            } else {
+              ctx.fillStyle = fill;
+              ctx.fill();
+            }
+            ctx.restore();
+          } else {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = fill;
+            ctx.globalAlpha = isConnected || isHovered ? 1 : 0.9;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+          }
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = fill;
-          ctx.globalAlpha = isConnected || isHovered ? 1 : 0.9;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = "rgba(255,255,255,0.75)";
-          ctx.lineWidth = isHovered ? 2.5 : 1.2;
+          ctx.strokeStyle = "rgba(255,255,255,0.8)";
+          ctx.lineWidth = isHovered ? 2.6 : 1.4;
           ctx.stroke();
 
           ctx.fillStyle = "#ffffff";
           ctx.textAlign = "center";
           ctx.font = `700 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
-          ctx.fillText(initials(graphNode.name), x, y + 4);
+          if (!graphNode.profilePath) {
+            ctx.fillText(initials(graphNode.name), x, y + 4);
+          }
 
           if (isHovered && graphNode.name) {
             const label = `${graphNode.name} • ${graphNode.role ?? "Person"}`;

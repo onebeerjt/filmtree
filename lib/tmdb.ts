@@ -16,6 +16,11 @@ type PersonMovieCreditsResponse = {
   crew: MovieSummary[];
 };
 
+type PersonDetails = {
+  id: number;
+  profile_path: string | null;
+};
+
 function getApiKey() {
   const key = process.env.TMDB_API_KEY;
   if (!key) {
@@ -68,6 +73,12 @@ async function getMovieCredits(movieId: number) {
 
 async function getPersonMovieCredits(personId: number) {
   return tmdbFetch<PersonMovieCreditsResponse>(`/person/${personId}/movie_credits`, {
+    language: "en-US"
+  });
+}
+
+async function getPersonDetails(personId: number) {
+  return tmdbFetch<PersonDetails>(`/person/${personId}`, {
     language: "en-US"
   });
 }
@@ -163,10 +174,17 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const links: FilmTreeResponse["links"] = [];
   const relatedMoviesByPerson = await Promise.all(
     corePeople.map(async (person) => {
-      const movieCredits = await getPersonMovieCredits(person.id);
+      const [movieCredits, personDetails] = await Promise.all([
+        getPersonMovieCredits(person.id),
+        getPersonDetails(person.id)
+      ]);
       const merged = [...movieCredits.cast, ...movieCredits.crew];
       const perPersonLimit = person.role === "Actor" ? 6 : 8;
-      return { person, relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit) };
+      return {
+        person,
+        profilePath: personDetails.profile_path,
+        relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit)
+      };
     })
   );
 
@@ -175,7 +193,7 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const personNodes: FilmTreeResponse["nodes"] = [];
   const movieNodeById = new Map<number, FilmTreeResponse["nodes"][number]>();
 
-  for (const [personIndex, { person, relatedMovies }] of relatedMoviesByPerson.entries()) {
+  for (const [personIndex, { person, profilePath, relatedMovies }] of relatedMoviesByPerson.entries()) {
     const personNodeId = `person-${person.id}`;
     const angle = (Math.PI * 2 * personIndex) / peopleCount - Math.PI / 2;
 
@@ -186,6 +204,7 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
       ring: 1,
       name: person.name,
       role: person.role,
+      profilePath,
       x: Math.cos(angle) * personRingRadius,
       y: Math.sin(angle) * personRingRadius
     });

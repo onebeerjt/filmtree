@@ -25,6 +25,7 @@ export type GraphNode = {
   year?: string;
   rating?: number;
   posterPath?: string | null;
+  profilePath?: string | null;
   isCenter?: boolean;
   x?: number;
   y?: number;

@@ -30,8 +30,8 @@ type PositionedNode = GraphNode & {
 };
 
 type PositionedLink = {
-  source: string;
-  target: string;
+  source: string | { id?: string };
+  target: string | { id?: string };
 };
 
 type TooltipState = {
@@ -86,6 +86,15 @@ function roleColor(role?: string) {
     default:
       return "#9ca3af";
   }
+}
+
+function linkEndId(end: string | { id?: string }) {
+  if (typeof end === "string") return end;
+  return end?.id ?? "";
+}
+
+function linkKey(a: string, b: string) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 function initials(name?: string) {
@@ -351,12 +360,12 @@ export function FilmTreeGraph({
     const nodeSet = new Set<string>([hoveredId]);
     const linkSet = new Set<string>();
     for (const link of graphData.links) {
-      const s = String(link.source);
-      const t = String(link.target);
+      const s = linkEndId(link.source);
+      const t = linkEndId(link.target);
       if (s === hoveredId || t === hoveredId) {
         nodeSet.add(s);
         nodeSet.add(t);
-        linkSet.add(`${s}->${t}`);
+        linkSet.add(linkKey(s, t));
       }
     }
 
@@ -488,9 +497,11 @@ export function FilmTreeGraph({
         enablePointerInteraction
         linkWidth={(link) => {
           const line = link as PositionedLink;
-          const key = `${line.source}->${line.target}`;
-          const source = nodeById.get(String(line.source));
-          const target = nodeById.get(String(line.target));
+          const sourceId = linkEndId(line.source);
+          const targetId = linkEndId(line.target);
+          const key = linkKey(sourceId, targetId);
+          const source = nodeById.get(sourceId);
+          const target = nodeById.get(targetId);
 
           const isCenterToPerson =
             (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
@@ -503,9 +514,11 @@ export function FilmTreeGraph({
         }}
         linkColor={(link) => {
           const line = link as PositionedLink;
-          const key = `${line.source}->${line.target}`;
-          const source = nodeById.get(String(line.source));
-          const target = nodeById.get(String(line.target));
+          const sourceId = linkEndId(line.source);
+          const targetId = linkEndId(line.target);
+          const key = linkKey(sourceId, targetId);
+          const source = nodeById.get(sourceId);
+          const target = nodeById.get(targetId);
           const role = getLinkRole(line);
           const baseColor = roleColor(role);
 

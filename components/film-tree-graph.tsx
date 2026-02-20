@@ -671,6 +671,30 @@ export function FilmTreeGraph({
               ctx.fillStyle = "#C9A84C";
               ctx.font = `600 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
               ctx.fillText(`${graphNode.year ?? "N/A"} • ${graphNode.rating?.toFixed(1) ?? "N/A"}`, x, y + h / 2 + 44);
+            } else if (isHovered) {
+              const rating = graphNode.rating?.toFixed(1) ?? "N/A";
+              const badgeText = `IMDb ${rating}`;
+              const fontSize = Math.max(10, 10 / globalScale);
+              ctx.font = `700 ${fontSize}px IBM Plex Sans, sans-serif`;
+              const textWidth = ctx.measureText(badgeText).width;
+              const padX = 8;
+              const padY = 4;
+              const bw = textWidth + padX * 2;
+              const bh = fontSize + padY * 2;
+              const bx = x - bw / 2;
+              const by = y + h / 2 + 7;
+
+              ctx.beginPath();
+              ctx.roundRect(bx, by, bw, bh, 7);
+              ctx.fillStyle = "rgba(10,10,14,0.92)";
+              ctx.fill();
+              ctx.strokeStyle = "rgba(255,215,107,0.95)";
+              ctx.lineWidth = 1.1;
+              ctx.stroke();
+
+              ctx.fillStyle = "#ffd76b";
+              ctx.textAlign = "center";
+              ctx.fillText(badgeText, x, by + bh - padY - 1);
             }
             return;
           }

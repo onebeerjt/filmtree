@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { FilmTreeGraph } from "@/components/film-tree-graph";
 import { MovieSearch } from "@/components/movie-search";
-import { FilmTreeResponse, MovieSummary } from "@/lib/types";
+import { FilmTreeResponse, GraphNode, MovieSummary } from "@/lib/types";
 
 type CacheEnvelope<T> = {
   expiresAt: number;
@@ -12,6 +12,12 @@ type CacheEnvelope<T> = {
 
 const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const TREE_CACHE_VERSION = "v7";
+
+type JourneyStep = {
+  id: string;
+  kind: "movie" | "person";
+  label: string;
+};
 
 function getTreeCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -53,6 +59,23 @@ export function FilmTreeExplorer() {
   const [pendingMovieId, setPendingMovieId] = useState<number | null>(null);
   const [failedMovieId, setFailedMovieId] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [journey, setJourney] = useState<JourneyStep[]>([]);
+  const [rootMovieId, setRootMovieId] = useState<number | null>(null);
+  const [rootMovieTitle, setRootMovieTitle] = useState<string>("");
+
+  function pushJourneyStep(node: GraphNode) {
+    const label = node.type === "movie" ? node.title ?? "Untitled" : `${node.name ?? "Unknown"} (${node.role ?? "Person"})`;
+    const step: JourneyStep = {
+      id: node.id,
+      kind: node.type,
+      label
+    };
+
+    setJourney((prev) => {
+      if (prev[prev.length - 1]?.id === step.id) return prev;
+      return [...prev, step].slice(-18);
+    });
+  }
 
   async function fetchTree(movieId: number, options?: { fromGraphClick?: boolean }) {
     const cacheKey = `film-tree:tree:${TREE_CACHE_VERSION}:${movieId}`;
@@ -96,6 +119,15 @@ export function FilmTreeExplorer() {
   }
 
   async function handleSearchSelect(movie: MovieSummary) {
+    setRootMovieId(movie.id);
+    setRootMovieTitle(movie.title);
+    setJourney([
+      {
+        id: `movie-${movie.id}`,
+        kind: "movie",
+        label: movie.title
+      }
+    ]);
     await fetchTree(movie.id);
   }
 
@@ -111,6 +143,15 @@ export function FilmTreeExplorer() {
         const payload = await response.json();
         const movie = (payload.results?.[0] ?? null) as MovieSummary | null;
         if (movie) {
+          setRootMovieId(movie.id);
+          setRootMovieTitle(movie.title);
+          setJourney([
+            {
+              id: `movie-${movie.id}`,
+              kind: "movie",
+              label: movie.title
+            }
+          ]);
           await fetchTree(movie.id);
         }
       } catch {
@@ -140,6 +181,18 @@ export function FilmTreeExplorer() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  async function handleResetJourney() {
+    if (!rootMovieId) return;
+    setJourney([
+      {
+        id: `movie-${rootMovieId}`,
+        kind: "movie",
+        label: rootMovieTitle || "Start"
+      }
+    ]);
+    await fetchTree(rootMovieId);
+  }
+
   return (
     <section className="relative h-full w-full overflow-hidden">
       {tree && (
@@ -148,6 +201,7 @@ export function FilmTreeExplorer() {
             nodes={tree.nodes}
             links={tree.links}
             onMovieClick={handleGraphMovieClick}
+            onExploreStep={pushJourneyStep}
             pendingMovieId={pendingMovieId}
             failedMovieId={failedMovieId}
           />
@@ -173,6 +227,37 @@ export function FilmTreeExplorer() {
 
       <div className="pointer-events-none absolute bottom-6 left-6 z-30 rounded-full border border-zinc-700/70 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 backdrop-blur-xl">
         Center: <span className="font-semibold text-white">{tree?.centerTitle ?? "Loading..."}</span>
+      </div>
+
+      <div className="absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
+        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-3 shadow-2xl backdrop-blur-xl">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Journey</p>
+            <button
+              type="button"
+              onClick={() => {
+                void handleResetJourney();
+              }}
+              className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
+            >
+              Reset
+            </button>
+          </div>
+          <div className="max-h-40 overflow-y-auto pr-1 text-xs text-zinc-200">
+            {journey.length === 0 ? (
+              <p className="text-zinc-400">Start exploring to build your path.</p>
+            ) : (
+              <p className="leading-6">
+                {journey.map((step, idx) => (
+                  <span key={`${step.id}-${idx}`}>
+                    <span className={step.kind === "movie" ? "text-white" : "text-zinc-300"}>{step.label}</span>
+                    {idx < journey.length - 1 ? <span className="px-2 text-[#c9a84c]">→</span> : null}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className={`pointer-events-none absolute bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full border border-zinc-700/60 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-300 backdrop-blur-lg transition-opacity duration-500 ${showHint ? "opacity-100" : "opacity-0"}`}>

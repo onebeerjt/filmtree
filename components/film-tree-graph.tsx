@@ -17,6 +17,7 @@ type Props = {
   nodes: GraphNode[];
   links: GraphLink[];
   onMovieClick: (movieId: number) => void;
+  onExploreStep?: (node: GraphNode) => void;
   pendingMovieId: number | null;
   failedMovieId: number | null;
 };
@@ -242,7 +243,14 @@ function layoutNodes(nodes: GraphNode[], links: GraphLink[], focusNodeId: string
   return resolveCollisions([...placed.values()]);
 }
 
-export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, failedMovieId }: Props) {
+export function FilmTreeGraph({
+  nodes,
+  links,
+  onMovieClick,
+  onExploreStep,
+  pendingMovieId,
+  failedMovieId
+}: Props) {
   const graphRef = useRef<ForceGraphMethods>();
   const centerIdRef = useRef<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -280,8 +288,10 @@ export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, fail
   const graphData = useMemo(() => {
     const laidOut = layoutNodes(nodes, links, focusNodeId);
     const sorted = [...laidOut].sort((a, b) => {
-      if (a.isCenter && !b.isCenter) return 1;
       if (!a.isCenter && b.isCenter) return -1;
+      if (a.isCenter && !b.isCenter) return 1;
+      if (a.type === "movie" && b.type === "person") return -1;
+      if (a.type === "person" && b.type === "movie") return 1;
       return 0;
     });
 
@@ -433,10 +443,12 @@ export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, fail
           ctx.fillStyle = color;
           if (graphNode.type === "movie") {
             const { w, h } = filmSizeFromRating(graphNode);
-            ctx.fillRect(x - w / 2 - 8, y - h / 2 - 8, w + 16, h + 16);
+            ctx.beginPath();
+            ctx.roundRect(x - w / 2 - 14, y - h / 2 - 14, w + 28, h + 28, 14);
+            ctx.fill();
           } else {
             ctx.beginPath();
-            ctx.arc(x, y, 28, 0, 2 * Math.PI);
+            ctx.arc(x, y, 34, 0, 2 * Math.PI);
             ctx.fill();
           }
         }}
@@ -459,6 +471,7 @@ export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, fail
         onNodeClick={(node) => {
           const graphNode = node as PositionedNode;
           setFocusNodeId(graphNode.id);
+          onExploreStep?.(graphNode);
           graphRef.current?.centerAt(graphNode.x, graphNode.y, 600);
 
           const fg = graphRef.current as ForceGraphMethods & {
@@ -603,6 +616,31 @@ export function FilmTreeGraph({ nodes, links, onMovieClick, pendingMovieId, fail
           ctx.textAlign = "center";
           ctx.font = `700 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
           ctx.fillText(initials(graphNode.name), x, y + 4);
+
+          if (isHovered && graphNode.name) {
+            const label = `${graphNode.name} • ${graphNode.role ?? "Person"}`;
+            const fontSize = Math.max(11, 11 / globalScale);
+            ctx.font = `600 ${fontSize}px IBM Plex Sans, sans-serif`;
+            const textWidth = ctx.measureText(label).width;
+            const padX = 9;
+            const padY = 5;
+            const boxW = textWidth + padX * 2;
+            const boxH = fontSize + padY * 2;
+            const boxX = x - boxW / 2;
+            const boxY = y + radius + 8;
+
+            ctx.beginPath();
+            ctx.roundRect(boxX, boxY, boxW, boxH, 7);
+            ctx.fillStyle = "rgba(10,10,14,0.94)";
+            ctx.fill();
+            ctx.strokeStyle = `${fill}cc`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(label, x, boxY + boxH - padY - 1);
+          }
         }}
       />
 

@@ -130,8 +130,14 @@ function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[]) {
     const dx = x - node.x;
     const dy = y - node.y;
     const distance = Math.hypot(dx, dy);
-    const threshold = nodeRadius(node) + (node.type === "movie" ? 8 : 10);
-    if (distance > threshold) continue;
+    if (node.type === "person") {
+      if (distance > 24) continue;
+    } else {
+      const { w, h } = filmSizeFromRating(node);
+      const halfW = w / 2 + 2;
+      const halfH = h / 2 + 2;
+      if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) continue;
+    }
     if (distance < bestDistance) {
       best = node;
       bestDistance = distance;
@@ -442,13 +448,20 @@ export function FilmTreeGraph({
     };
     if (!fg?.screen2GraphCoords) return null;
 
-    const anyEvent = event as MouseEvent & { clientX?: number; clientY?: number };
-    if (typeof anyEvent.clientX !== "number" || typeof anyEvent.clientY !== "number") return null;
+    const anyEvent = event as MouseEvent & { clientX?: number; clientY?: number; offsetX?: number; offsetY?: number };
+    let sx: number | null = typeof anyEvent.offsetX === "number" ? anyEvent.offsetX : null;
+    let sy: number | null = typeof anyEvent.offsetY === "number" ? anyEvent.offsetY : null;
 
-    const canvas = (event.target as HTMLElement | null)?.closest("canvas");
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const graphPt = fg.screen2GraphCoords(anyEvent.clientX - rect.left, anyEvent.clientY - rect.top);
+    if (sx === null || sy === null) {
+      if (typeof anyEvent.clientX !== "number" || typeof anyEvent.clientY !== "number") return null;
+      const canvas = (event.target as HTMLElement | null)?.closest("canvas");
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      sx = anyEvent.clientX - rect.left;
+      sy = anyEvent.clientY - rect.top;
+    }
+
+    const graphPt = fg.screen2GraphCoords(sx, sy);
     return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes);
   }
 
@@ -678,9 +691,11 @@ export function FilmTreeGraph({
           ctx.fillStyle = "#ffffff";
           ctx.textAlign = "center";
           ctx.font = `700 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
-          if (!graphNode.profilePath) {
-            ctx.fillText(initials(graphNode.name), x, y + 4);
-          }
+          const initialsText = initials(graphNode.name);
+          ctx.strokeStyle = "rgba(0,0,0,0.55)";
+          ctx.lineWidth = 3;
+          ctx.strokeText(initialsText, x, y + 4);
+          ctx.fillText(initialsText, x, y + 4);
 
           if (isHovered && graphNode.name) {
             const label = `${graphNode.name} • ${graphNode.role ?? "Person"}`;

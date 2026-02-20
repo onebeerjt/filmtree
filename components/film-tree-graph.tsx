@@ -96,6 +96,12 @@ function initials(name?: string) {
   return `${parts[0][0] ?? ""}${parts[parts.length - 1][0] ?? ""}`.toUpperCase();
 }
 
+function shortName(name?: string, max = 18) {
+  if (!name) return "Unknown";
+  if (name.length <= max) return name;
+  return `${name.slice(0, max - 1)}…`;
+}
+
 function filmSizeFromRating(node: GraphNode) {
   const rating = node.rating;
   let width = 45;
@@ -691,11 +697,27 @@ export function FilmTreeGraph({
           ctx.fillStyle = "#ffffff";
           ctx.textAlign = "center";
           ctx.font = `700 ${Math.max(13, 13 / globalScale)}px IBM Plex Sans, sans-serif`;
-          const initialsText = initials(graphNode.name);
-          ctx.strokeStyle = "rgba(0,0,0,0.55)";
-          ctx.lineWidth = 3;
-          ctx.strokeText(initialsText, x, y + 4);
-          ctx.fillText(initialsText, x, y + 4);
+          if (!graphNode.profilePath) {
+            const initialsText = initials(graphNode.name);
+            ctx.strokeStyle = "rgba(0,0,0,0.55)";
+            ctx.lineWidth = 3;
+            ctx.strokeText(initialsText, x, y + 4);
+            ctx.fillText(initialsText, x, y + 4);
+          }
+
+          const label = shortName(graphNode.name, 20);
+          const labelFont = Math.max(9, 9 / globalScale);
+          ctx.font = `600 ${labelFont}px IBM Plex Sans, sans-serif`;
+          const labelW = ctx.measureText(label).width + 10;
+          const labelH = labelFont + 6;
+          const labelX = x - labelW / 2;
+          const labelY = y + radius + 6;
+          ctx.beginPath();
+          ctx.roundRect(labelX, labelY, labelW, labelH, 6);
+          ctx.fillStyle = "rgba(10,10,14,0.82)";
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.92)";
+          ctx.fillText(label, x, labelY + labelH - 4);
 
           if (isHovered && graphNode.name) {
             const label = `${graphNode.name} • ${graphNode.role ?? "Person"}`;

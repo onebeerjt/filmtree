@@ -443,7 +443,9 @@ export function FilmTreeGraph({
           ctx.fillStyle = color;
           if (graphNode.type === "movie") {
             const { w, h } = filmSizeFromRating(graphNode);
-            ctx.fillRect(x - w / 2 - 14, y - h / 2 - 14, w + 28, h + 28);
+            ctx.beginPath();
+            ctx.roundRect(x - w / 2 - 4, y - h / 2 - 4, w + 8, h + 8, 10);
+            ctx.fill();
           } else {
             ctx.beginPath();
             ctx.arc(x, y, 22, 0, 2 * Math.PI);
@@ -664,20 +666,7 @@ export function FilmTreeGraph({
       {tooltip?.nodeId && (() => {
         const node = nodeById.get(tooltip.nodeId);
         if (!node) return null;
-
-        if (node.type === "person") {
-          return (
-            <div
-              className="pointer-events-none absolute z-40 transition-opacity duration-200"
-              style={{ left: tooltip.x, top: tooltip.y - 42, transform: "translate(-50%, -100%)" }}
-            >
-              <div className="rounded-lg border border-zinc-600 bg-zinc-950/90 px-3 py-2 text-xs text-white shadow-2xl backdrop-blur">
-                <p className="font-semibold">{node.name}</p>
-                <p className="text-zinc-300">{node.role}</p>
-              </div>
-            </div>
-          );
-        }
+        if (node.type === "person") return null;
 
         const director = getMovieDirectorName(node.id);
         return (

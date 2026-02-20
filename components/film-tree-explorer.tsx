@@ -229,7 +229,7 @@ export function FilmTreeExplorer() {
         Center: <span className="font-semibold text-white">{tree?.centerTitle ?? "Loading..."}</span>
       </div>
 
-      <div className="absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
+      <div className="pointer-events-none absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
         <div className="rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-3 shadow-2xl backdrop-blur-xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Journey</p>
@@ -238,7 +238,7 @@ export function FilmTreeExplorer() {
               onClick={() => {
                 void handleResetJourney();
               }}
-              className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
+              className="pointer-events-auto rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
             >
               Reset
             </button>

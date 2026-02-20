@@ -495,8 +495,8 @@ export function FilmTreeGraph({
           const isCenterToPerson =
             (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
 
-          if (hoveredNode?.type === "person") {
-            return connectedLinkKeys.has(key) ? 3.2 : 0.25;
+          if (hoveredNode) {
+            return connectedLinkKeys.has(key) ? 3.4 : 0.55;
           }
 
           return isCenterToPerson ? 2.1 : 1.1;
@@ -512,8 +512,8 @@ export function FilmTreeGraph({
           const isCenterToPerson =
             (source?.isCenter && target?.type === "person") || (target?.isCenter && source?.type === "person");
 
-          if (hoveredNode?.type === "person") {
-            return connectedLinkKeys.has(key) ? `${baseColor}FF` : "rgba(255,255,255,0.04)";
+          if (hoveredNode) {
+            return connectedLinkKeys.has(key) ? "rgba(255,215,107,0.98)" : "rgba(255,255,255,0.08)";
           }
 
           if (isCenterToPerson) return `${baseColor}CC`;

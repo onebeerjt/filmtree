@@ -184,14 +184,7 @@ export function MovieSearch({
             const movieMatch = pickBestMovieMatch(query, results);
             const personMatch = pickBestPersonMatch(query, people);
 
-            if (movieMatch && normalize(movieMatch.title) === normalize(query)) {
-              selectMovie(movieMatch);
-              return;
-            }
-            if (personMatch && onPersonSelect && normalize(personMatch.name) === normalize(query)) {
-              selectPerson(personMatch);
-              return;
-            }
+            // Always prefer movie selection over people for same/similar text.
             if (movieMatch) {
               selectMovie(movieMatch);
               return;
@@ -221,30 +214,44 @@ export function MovieSearch({
           {!isSearching &&
             results.map((movie) => {
               const year = movie.release_date?.slice(0, 4) || "N/A";
+              const poster = movie.poster_path ? `https://image.tmdb.org/t/p/w92${movie.poster_path}` : null;
               return (
                 <button
                   key={`movie-${movie.id}`}
                   type="button"
                   onClick={() => selectMovie(movie)}
-                  className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-3 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
+                  className="flex w-full items-center gap-3 border-b border-zinc-800 px-3 py-2.5 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
                 >
-                  <span className="text-zinc-100">{movie.title}</span>
-                  <span className="text-zinc-500">{year}</span>
+                  <div className="h-10 w-7 overflow-hidden rounded bg-zinc-800">
+                    {poster ? <img src={poster} alt={movie.title} className="h-full w-full object-cover" /> : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-zinc-100">{movie.title}</p>
+                    <p className="text-xs text-zinc-500">{year}</p>
+                  </div>
+                  <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">Movie</span>
                 </button>
               );
             })}
 
           {!isSearching &&
             people.map((person) => {
+              const profile = person.profile_path ? `https://image.tmdb.org/t/p/w92${person.profile_path}` : null;
               return (
                 <button
                   key={`person-${person.id}`}
                   type="button"
                   onClick={() => selectPerson(person)}
-                  className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-3 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
+                  className="flex w-full items-center gap-3 border-b border-zinc-800 px-3 py-2.5 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
                 >
-                  <span className="text-zinc-100">{person.name}</span>
-                  <span className="text-zinc-500">{person.known_for_department ?? "Person"}</span>
+                  <div className="h-9 w-9 overflow-hidden rounded-full bg-zinc-800">
+                    {profile ? <img src={profile} alt={person.name} className="h-full w-full object-cover" /> : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-zinc-100">{person.name}</p>
+                    <p className="text-xs text-zinc-500">{person.known_for_department ?? "Person"}</p>
+                  </div>
+                  <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">Person</span>
                 </button>
               );
             })}

@@ -141,7 +141,7 @@ function nodeRadius(node: GraphNode) {
   return Math.hypot(size.w / 2, size.h / 2);
 }
 
-function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[]) {
+function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[], preferMovie = false) {
   let best: PositionedNode | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -153,13 +153,14 @@ function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[]) {
       if (distance > 30) continue;
     } else {
       const { w, h } = filmSizeFromRating(node);
-      const halfW = w / 2 + 2;
-      const halfH = h / 2 + 2;
+      const halfW = Math.max(24, w / 2 + 8);
+      const halfH = Math.max(34, h / 2 + 8);
       if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) continue;
     }
-    if (distance < bestDistance) {
+    const effectiveDistance = preferMovie && node.type === "movie" ? distance * 0.7 : distance;
+    if (effectiveDistance < bestDistance) {
       best = node;
-      bestDistance = distance;
+      bestDistance = effectiveDistance;
     }
   }
 
@@ -474,7 +475,7 @@ export function FilmTreeGraph({
     onMovieClick(graphNode.tmdbId);
   }
 
-  function resolvePointerToNode(event: CoordsEvent) {
+  function resolvePointerToNode(event: CoordsEvent, preferMovie = false) {
     const fg = graphRef.current as ForceGraphMethods & {
       screen2GraphCoords?: (x: number, y: number) => { x: number; y: number };
     };
@@ -494,7 +495,7 @@ export function FilmTreeGraph({
     }
 
     const graphPt = fg.screen2GraphCoords(sx, sy);
-    return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes);
+    return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes, preferMovie);
   }
 
   return (
@@ -593,11 +594,16 @@ export function FilmTreeGraph({
           const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
           setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
         }}
-        onNodeClick={(node) => {
+        onNodeClick={(node, event) => {
+          const fallback = resolvePointerToNode(event as CoordsEvent, true);
+          if (fallback) {
+            activateNode(fallback);
+            return;
+          }
           activateNode(node as PositionedNode);
         }}
         onBackgroundClick={(event) => {
-          const fallbackNode = resolvePointerToNode(event as CoordsEvent);
+          const fallbackNode = resolvePointerToNode(event as CoordsEvent, true);
           if (fallbackNode) {
             activateNode(fallbackNode);
           }

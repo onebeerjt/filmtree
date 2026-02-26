@@ -15,6 +15,20 @@ const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const TREE_CACHE_VERSION = "v7";
 const STREAMING_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const STREAMING_CACHE_VERSION = "v1";
+const RANDOM_SEED_TITLES = [
+  "Inception",
+  "The Dark Knight",
+  "Pulp Fiction",
+  "Interstellar",
+  "The Godfather",
+  "The Matrix",
+  "Fight Club",
+  "The Departed",
+  "Mad Max: Fury Road",
+  "Blade Runner 2049",
+  "Parasite",
+  "The Shawshank Redemption"
+];
 
 type JourneyStep = {
   id: string;
@@ -225,9 +239,17 @@ export function FilmTreeExplorer() {
     const bootstrap = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent("Inception")}`);
-        const payload = await response.json();
-        const movie = (payload.results?.[0] ?? null) as MovieSummary | null;
+        const randomTitle = RANDOM_SEED_TITLES[Math.floor(Math.random() * RANDOM_SEED_TITLES.length)] ?? "Inception";
+        const randomResponse = await fetch(`/api/tmdb/search?query=${encodeURIComponent(randomTitle)}`);
+        const randomPayload = await randomResponse.json();
+        let movie = (randomPayload.results?.[0] ?? null) as MovieSummary | null;
+
+        if (!movie) {
+          const fallbackResponse = await fetch(`/api/tmdb/search?query=${encodeURIComponent("Inception")}`);
+          const fallbackPayload = await fallbackResponse.json();
+          movie = (fallbackPayload.results?.[0] ?? null) as MovieSummary | null;
+        }
+
         if (movie) {
           setRootMovieId(movie.id);
           setRootMovieTitle(movie.title);

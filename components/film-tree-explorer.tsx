@@ -93,23 +93,19 @@ export function FilmTreeExplorer() {
 
     if (missingIds.length === 0) return;
 
-    const settled = await Promise.allSettled(
-      missingIds.map(async (movieId) => {
-        const response = await fetch(`/api/streaming?tmdbId=${movieId}`);
-        if (!response.ok) throw new Error("streaming fetch failed");
-        return (await response.json()) as StreamingAvailability;
-      })
-    );
-
     const nextMap: Record<number, StreamingAvailability> = {};
-    settled.forEach((entry, idx) => {
-      if (entry.status !== "fulfilled") return;
-      const movieId = missingIds[idx];
-      const value = entry.value;
-      if (!value || value.tmdbId !== movieId) return;
-      nextMap[movieId] = value;
-      setStreamingCache(movieId, value);
-    });
+    for (const movieId of missingIds) {
+      try {
+        const response = await fetch(`/api/streaming?tmdbId=${movieId}`);
+        if (!response.ok) continue;
+        const value = (await response.json()) as StreamingAvailability;
+        if (!value || value.tmdbId !== movieId) continue;
+        nextMap[movieId] = value;
+        setStreamingCache(movieId, value);
+      } catch {
+        // Keep graph usable even when availability lookups fail.
+      }
+    }
 
     if (Object.keys(nextMap).length > 0) {
       setStreamingByMovieId((prev) => ({ ...prev, ...nextMap }));
@@ -242,6 +238,7 @@ export function FilmTreeExplorer() {
 
   async function handleResetJourney() {
     if (!rootMovieId) return;
+    setSelectedPlatforms([]);
     setJourney([
       {
         id: `movie-${rootMovieId}`,
@@ -315,7 +312,7 @@ export function FilmTreeExplorer() {
         Center: <span className="font-semibold text-white">{tree?.centerTitle ?? "Loading..."}</span>
       </div>
 
-      <div className="pointer-events-none absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
+      <div className="absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
         <div className="rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-3 shadow-2xl backdrop-blur-xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Journey</p>
@@ -324,7 +321,7 @@ export function FilmTreeExplorer() {
               onClick={() => {
                 void handleResetJourney();
               }}
-              className="pointer-events-auto rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
+              className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
             >
               Reset
             </button>

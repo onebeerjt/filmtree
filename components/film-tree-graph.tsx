@@ -438,7 +438,7 @@ export function FilmTreeGraph({
   function movieMatchesPlatformFilter(graphNode: PositionedNode) {
     if (graphNode.type !== "movie" || selectedPlatforms.length === 0) return true;
     const availability = streamingByMovieId[graphNode.tmdbId];
-    if (!availability) return false;
+    if (!availability) return true;
     return selectedPlatforms.some((platform) => availability.all.includes(platform));
   }
 

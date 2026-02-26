@@ -52,16 +52,17 @@ function parseSources(tmdbId: number, sources: WatchmodeSource[]): StreamingAvai
 
 export async function GET(request: NextRequest) {
   try {
-    const watchmodeKey = process.env.WATCHMODE_API_KEY;
-    if (!watchmodeKey) {
-      return NextResponse.json({ error: "Missing WATCHMODE_API_KEY" }, { status: 500 });
-    }
-
     const tmdbId = Number(request.nextUrl.searchParams.get("tmdbId"));
-    const region = request.nextUrl.searchParams.get("region") ?? "US";
     if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
       return NextResponse.json({ error: "Invalid tmdbId parameter" }, { status: 400 });
     }
+
+    const watchmodeKey = process.env.WATCHMODE_API_KEY;
+    if (!watchmodeKey) {
+      return NextResponse.json(emptyAvailability(tmdbId), { status: 200 });
+    }
+
+    const region = request.nextUrl.searchParams.get("region") ?? "US";
 
     const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
     searchUrl.searchParams.set("apiKey", watchmodeKey);

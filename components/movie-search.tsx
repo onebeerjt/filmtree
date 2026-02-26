@@ -17,6 +17,7 @@ type CacheEnvelope<T> = {
 };
 
 const SEARCH_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const SEARCH_CACHE_VERSION = "v2";
 
 function getCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -84,8 +85,8 @@ export function MovieSearch({
     }
 
     const timeout = setTimeout(async () => {
-      const moviesKey = `film-tree:search:movies:${trimmed.toLowerCase()}`;
-      const peopleKey = `film-tree:search:people:${trimmed.toLowerCase()}`;
+      const moviesKey = `film-tree:search:movies:${SEARCH_CACHE_VERSION}:${trimmed.toLowerCase()}`;
+      const peopleKey = `film-tree:search:people:${SEARCH_CACHE_VERSION}:${trimmed.toLowerCase()}`;
       const cachedMovies = getCache<MovieSummary[]>(moviesKey);
       const cachedPeople = getCache<PersonSummary[]>(peopleKey);
 

@@ -43,6 +43,32 @@ async function tmdbFetch<T>(path: string, params: Record<string, string> = {}): 
   return response.json() as Promise<T>;
 }
 
+function normalize(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ");
+}
+
+function scoreMovieResult(query: string, movie: MovieSummary) {
+  const normalizedQuery = normalize(query);
+  const normalizedTitle = normalize(movie.title ?? "");
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+
+  let textScore = 0;
+  if (normalizedTitle === normalizedQuery) textScore += 10000;
+  else if (normalizedTitle.startsWith(normalizedQuery)) textScore += 7000;
+  else if (normalizedTitle.includes(normalizedQuery)) textScore += 4500;
+
+  const tokenMatches = queryTokens.reduce((count, token) => count + (normalizedTitle.includes(token) ? 1 : 0), 0);
+  textScore += tokenMatches * 450;
+
+  const popularityScore = (movie.popularity ?? 0) * 2.2;
+  const voteCountScore = Math.min(4000, (movie.vote_count ?? 0) * 0.04);
+  const ratingScore = (movie.vote_average ?? 0) * 55;
+  const posterBoost = movie.poster_path ? 260 : 0;
+  const yearBoost = movie.release_date ? 140 : 0;
+
+  return textScore + popularityScore + voteCountScore + ratingScore + posterBoost + yearBoost;
+}
+
 export async function searchMovies(query: string) {
   const data = await tmdbFetch<{ results: MovieSummary[] }>("/search/movie", {
     query,
@@ -51,7 +77,9 @@ export async function searchMovies(query: string) {
     page: "1"
   });
 
-  return data.results.slice(0, 10);
+  return [...data.results]
+    .sort((a, b) => scoreMovieResult(query, b) - scoreMovieResult(query, a))
+    .slice(0, 12);
 }
 
 export async function searchPeople(query: string) {

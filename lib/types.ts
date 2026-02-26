@@ -43,3 +43,21 @@ export type FilmTreeResponse = {
   nodes: GraphNode[];
   links: GraphLink[];
 };
+
+export type StreamingPlatformKey =
+  | "netflix"
+  | "hulu"
+  | "max"
+  | "disney"
+  | "prime"
+  | "apple"
+  | "peacock"
+  | "paramount";
+
+export type StreamingAvailability = {
+  tmdbId: number;
+  subscription: StreamingPlatformKey[];
+  rent: StreamingPlatformKey[];
+  buy: StreamingPlatformKey[];
+  all: StreamingPlatformKey[];
+};

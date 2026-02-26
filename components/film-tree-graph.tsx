@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import NextImage from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ForceGraphMethods } from "react-force-graph-2d";
-import { GraphLink, GraphNode } from "@/lib/types";
+import { PLATFORM_META } from "@/lib/streaming";
+import { GraphLink, GraphNode, StreamingAvailability, StreamingPlatformKey } from "@/lib/types";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false
@@ -20,6 +21,8 @@ type Props = {
   onExploreStep?: (node: GraphNode) => void;
   pendingMovieId: number | null;
   failedMovieId: number | null;
+  streamingByMovieId: Record<number, StreamingAvailability>;
+  selectedPlatforms: StreamingPlatformKey[];
 };
 
 type PositionedNode = GraphNode & {
@@ -291,7 +294,9 @@ export function FilmTreeGraph({
   onMovieClick,
   onExploreStep,
   pendingMovieId,
-  failedMovieId
+  failedMovieId,
+  streamingByMovieId,
+  selectedPlatforms
 }: Props) {
   const graphRef = useRef<ForceGraphMethods>();
   const centerIdRef = useRef<string | null>(null);
@@ -408,8 +413,8 @@ export function FilmTreeGraph({
   }, [tick, nodeById, tooltip?.nodeId]);
 
   function getLinkRole(link: PositionedLink) {
-    const source = nodeById.get(String(link.source));
-    const target = nodeById.get(String(link.target));
+    const source = nodeById.get(linkEndId(link.source));
+    const target = nodeById.get(linkEndId(link.target));
     if (source?.type === "person") return source.role;
     if (target?.type === "person") return target.role;
     return undefined;
@@ -417,10 +422,10 @@ export function FilmTreeGraph({
 
   function getMovieDirectorName(movieNodeId: string) {
     const directors = graphData.links
-      .filter((link) => String(link.source) === movieNodeId || String(link.target) === movieNodeId)
+      .filter((link) => linkEndId(link.source) === movieNodeId || linkEndId(link.target) === movieNodeId)
       .map((link) => {
-        const source = nodeById.get(String(link.source));
-        const target = nodeById.get(String(link.target));
+        const source = nodeById.get(linkEndId(link.source));
+        const target = nodeById.get(linkEndId(link.target));
         if (source?.type === "person" && source.role === "Director") return source.name;
         if (target?.type === "person" && target.role === "Director") return target.name;
         return null;
@@ -428,6 +433,13 @@ export function FilmTreeGraph({
       .filter((name): name is string => Boolean(name));
 
     return directors[0] ?? "Unknown";
+  }
+
+  function movieMatchesPlatformFilter(graphNode: PositionedNode) {
+    if (graphNode.type !== "movie" || selectedPlatforms.length === 0) return true;
+    const availability = streamingByMovieId[graphNode.tmdbId];
+    if (!availability) return false;
+    return selectedPlatforms.some((platform) => availability.all.includes(platform));
   }
 
   function activateNode(graphNode: PositionedNode) {
@@ -510,6 +522,12 @@ export function FilmTreeGraph({
             return connectedLinkKeys.has(key) ? 3.4 : 0.55;
           }
 
+          if (selectedPlatforms.length > 0) {
+            const sourceVisible = source?.type === "movie" ? movieMatchesPlatformFilter(source) : true;
+            const targetVisible = target?.type === "movie" ? movieMatchesPlatformFilter(target) : true;
+            return sourceVisible && targetVisible ? (isCenterToPerson ? 2.1 : 1.1) : 0.45;
+          }
+
           return isCenterToPerson ? 2.1 : 1.1;
         }}
         linkColor={(link) => {
@@ -527,6 +545,12 @@ export function FilmTreeGraph({
 
           if (hoveredNode) {
             return connectedLinkKeys.has(key) ? "rgba(255,215,107,0.98)" : "rgba(255,255,255,0.08)";
+          }
+
+          if (selectedPlatforms.length > 0) {
+            const sourceVisible = source?.type === "movie" ? movieMatchesPlatformFilter(source) : true;
+            const targetVisible = target?.type === "movie" ? movieMatchesPlatformFilter(target) : true;
+            return sourceVisible && targetVisible ? `${baseColor}66` : "rgba(255,255,255,0.06)";
           }
 
           if (isCenterToPerson) return `${baseColor}CC`;
@@ -611,6 +635,9 @@ export function FilmTreeGraph({
 
             const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
+            const isFilterMiss = selectedPlatforms.length > 0 && !movieMatchesPlatformFilter(graphNode);
+            const availability = streamingByMovieId[graphNode.tmdbId];
+            const badgePlatforms = availability?.all?.slice(0, 3) ?? [];
 
             if (graphNode.isCenter) {
               const pulse = 1 + 0.15 * (0.5 + 0.5 * Math.sin(Date.now() / 320));
@@ -637,6 +664,9 @@ export function FilmTreeGraph({
             }
 
             ctx.save();
+            if (isFilterMiss) {
+              ctx.filter = "grayscale(100%) opacity(35%)";
+            }
             ctx.beginPath();
             ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
             ctx.closePath();
@@ -658,9 +688,31 @@ export function FilmTreeGraph({
 
             ctx.beginPath();
             ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
-            ctx.strokeStyle = graphNode.isCenter ? "#C9A84C" : "rgba(255,255,255,0.55)";
-            ctx.lineWidth = graphNode.isCenter ? 3 : 1.4;
+            if (selectedPlatforms.length > 0 && !isFilterMiss) {
+              ctx.strokeStyle = "rgba(255,215,107,0.95)";
+              ctx.lineWidth = graphNode.isCenter ? 3.4 : 2.2;
+            } else {
+              ctx.strokeStyle = graphNode.isCenter ? "#C9A84C" : "rgba(255,255,255,0.55)";
+              ctx.lineWidth = graphNode.isCenter ? 3 : 1.4;
+            }
             ctx.stroke();
+
+            if (badgePlatforms.length > 0) {
+              const badgeSize = 12;
+              badgePlatforms.forEach((platform, index) => {
+                const meta = PLATFORM_META[platform];
+                const icon = loadImage(meta.logoUrl);
+                const bx = x + w / 2 - (badgeSize + 2) * (badgePlatforms.length - index);
+                const by = y - h / 2 - badgeSize / 2;
+                ctx.beginPath();
+                ctx.arc(bx + badgeSize / 2, by + badgeSize / 2, badgeSize / 2 + 1.2, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(10,10,14,0.95)";
+                ctx.fill();
+                if (icon.complete) {
+                  ctx.drawImage(icon, bx, by, badgeSize, badgeSize);
+                }
+              });
+            }
 
             if (graphNode.isCenter) {
               ctx.fillStyle = "#ffffff";
@@ -789,12 +841,17 @@ export function FilmTreeGraph({
         if (node.type === "person") return null;
 
         const director = getMovieDirectorName(node.id);
+        const availability = streamingByMovieId[node.tmdbId];
+        const renderPlatforms = (platforms?: StreamingPlatformKey[]) => {
+          if (!platforms || platforms.length === 0) return "None";
+          return platforms.map((platform) => PLATFORM_META[platform].shortLabel).join(", ");
+        };
         return (
           <div
             className="pointer-events-none absolute z-40 transition-opacity duration-200"
             style={{ left: tooltip.x, top: tooltip.y - 24, transform: "translate(-50%, -100%)" }}
           >
-            <div className="flex w-64 gap-3 rounded-xl border border-zinc-700 bg-zinc-950/90 p-3 text-xs text-white shadow-2xl backdrop-blur">
+            <div className="flex w-72 gap-3 rounded-xl border border-zinc-700 bg-zinc-950/90 p-3 text-xs text-white shadow-2xl backdrop-blur">
               <div className="h-[90px] w-[60px] overflow-hidden rounded-md bg-zinc-800">
                 {node.posterPath ? (
                   <NextImage
@@ -811,6 +868,10 @@ export function FilmTreeGraph({
                 <p className="truncate text-sm font-semibold text-white">{node.title}</p>
                 <p className="text-zinc-300">{node.year ?? "N/A"} • {node.rating?.toFixed(1) ?? "N/A"}</p>
                 <p className="mt-1 truncate text-zinc-300">Director: {director}</p>
+                <p className="mt-2 font-semibold text-zinc-200">Where to Watch</p>
+                <p className="truncate text-zinc-300">Stream: {renderPlatforms(availability?.subscription)}</p>
+                <p className="truncate text-zinc-300">Rent: {renderPlatforms(availability?.rent)}</p>
+                <p className="truncate text-zinc-300">Buy: {renderPlatforms(availability?.buy)}</p>
                 <p className="mt-2 text-[#c9a84c]">Click to explore</p>
               </div>
             </div>

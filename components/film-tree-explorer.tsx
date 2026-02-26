@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { FilmTreeGraph } from "@/components/film-tree-graph";
 import { MovieSearch } from "@/components/movie-search";
-import { FilmTreeResponse, GraphNode, MovieSummary } from "@/lib/types";
+import { PLATFORM_META, PLATFORM_ORDER } from "@/lib/streaming";
+import { FilmTreeResponse, GraphNode, MovieSummary, StreamingAvailability, StreamingPlatformKey } from "@/lib/types";
 
 type CacheEnvelope<T> = {
   expiresAt: number;
@@ -12,6 +13,8 @@ type CacheEnvelope<T> = {
 
 const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const TREE_CACHE_VERSION = "v7";
+const STREAMING_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const STREAMING_CACHE_VERSION = "v1";
 
 type JourneyStep = {
   id: string;
@@ -62,6 +65,60 @@ export function FilmTreeExplorer() {
   const [journey, setJourney] = useState<JourneyStep[]>([]);
   const [rootMovieId, setRootMovieId] = useState<number | null>(null);
   const [rootMovieTitle, setRootMovieTitle] = useState<string>("");
+  const [streamingByMovieId, setStreamingByMovieId] = useState<Record<number, StreamingAvailability>>({});
+  const [selectedPlatforms, setSelectedPlatforms] = useState<StreamingPlatformKey[]>([]);
+
+  function getStreamingCache(tmdbId: number) {
+    return getTreeCache<StreamingAvailability>(`film-tree:streaming:${STREAMING_CACHE_VERSION}:${tmdbId}`);
+  }
+
+  function setStreamingCache(tmdbId: number, data: StreamingAvailability) {
+    setTreeCache(`film-tree:streaming:${STREAMING_CACHE_VERSION}:${tmdbId}`, data, STREAMING_CACHE_TTL_MS);
+  }
+
+  async function fetchStreamingForTree(nextTree: FilmTreeResponse) {
+    const movieIds = nextTree.nodes.filter((node) => node.type === "movie").map((node) => node.tmdbId);
+    if (movieIds.length === 0) return;
+
+    const cachedMap: Record<number, StreamingAvailability> = {};
+    const missingIds: number[] = [];
+    for (const movieId of movieIds) {
+      const cached = getStreamingCache(movieId);
+      if (cached) cachedMap[movieId] = cached;
+      else missingIds.push(movieId);
+    }
+    if (Object.keys(cachedMap).length > 0) {
+      setStreamingByMovieId((prev) => ({ ...prev, ...cachedMap }));
+    }
+
+    if (missingIds.length === 0) return;
+
+    const settled = await Promise.allSettled(
+      missingIds.map(async (movieId) => {
+        const response = await fetch(`/api/streaming?tmdbId=${movieId}`);
+        if (!response.ok) throw new Error("streaming fetch failed");
+        return (await response.json()) as StreamingAvailability;
+      })
+    );
+
+    const nextMap: Record<number, StreamingAvailability> = {};
+    settled.forEach((entry, idx) => {
+      if (entry.status !== "fulfilled") return;
+      const movieId = missingIds[idx];
+      const value = entry.value;
+      if (!value || value.tmdbId !== movieId) return;
+      nextMap[movieId] = value;
+      setStreamingCache(movieId, value);
+    });
+
+    if (Object.keys(nextMap).length > 0) {
+      setStreamingByMovieId((prev) => ({ ...prev, ...nextMap }));
+    }
+  }
+
+  function togglePlatform(key: StreamingPlatformKey) {
+    setSelectedPlatforms((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
+  }
 
   function pushJourneyStep(node: GraphNode) {
     const label = node.type === "movie" ? node.title ?? "Untitled" : `${node.name ?? "Unknown"} (${node.role ?? "Person"})`;
@@ -90,6 +147,7 @@ export function FilmTreeExplorer() {
       setTree(cached);
       setError(null);
       setPendingMovieId(null);
+      void fetchStreamingForTree(cached);
       return;
     }
 
@@ -106,6 +164,7 @@ export function FilmTreeExplorer() {
 
       setTree(payload);
       setTreeCache(cacheKey, payload, TREE_CACHE_TTL_MS);
+      void fetchStreamingForTree(payload);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error while loading graph";
       setError(message);
@@ -204,6 +263,8 @@ export function FilmTreeExplorer() {
             onExploreStep={pushJourneyStep}
             pendingMovieId={pendingMovieId}
             failedMovieId={failedMovieId}
+            streamingByMovieId={streamingByMovieId}
+            selectedPlatforms={selectedPlatforms}
           />
         </div>
       )}
@@ -222,6 +283,31 @@ export function FilmTreeExplorer() {
             isLoading={isLoading || Boolean(pendingMovieId)}
             placeholder="Search any film..."
           />
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute left-1/2 top-24 z-30 w-[min(95vw,980px)] -translate-x-1/2">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-700/60 bg-zinc-950/55 p-2.5 shadow-[0_16px_36px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          {PLATFORM_ORDER.map((key) => {
+            const meta = PLATFORM_META[key];
+            const active = selectedPlatforms.includes(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => togglePlatform(key)}
+                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition"
+                style={{
+                  borderColor: active ? meta.color : "rgba(255,255,255,0.22)",
+                  backgroundColor: active ? `${meta.color}26` : "rgba(17,24,39,0.35)",
+                  color: active ? "#ffffff" : "rgba(255,255,255,0.82)"
+                }}
+              >
+                <img src={meta.logoUrl} alt={meta.label} className="h-3.5 w-3.5 object-contain" />
+                <span>{meta.shortLabel}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -18,6 +18,7 @@ type Props = {
   nodes: GraphNode[];
   links: GraphLink[];
   onMovieClick: (movieId: number) => void;
+  onPersonClick?: (personId: number, personName: string) => void;
   onExploreStep?: (node: GraphNode) => void;
   pendingMovieId: number | null;
   failedMovieId: number | null;
@@ -149,7 +150,7 @@ function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[]) {
     const dy = y - node.y;
     const distance = Math.hypot(dx, dy);
     if (node.type === "person") {
-      if (distance > 24) continue;
+      if (distance > 30) continue;
     } else {
       const { w, h } = filmSizeFromRating(node);
       const halfW = w / 2 + 2;
@@ -292,6 +293,7 @@ export function FilmTreeGraph({
   nodes,
   links,
   onMovieClick,
+  onPersonClick,
   onExploreStep,
   pendingMovieId,
   failedMovieId,
@@ -337,8 +339,8 @@ export function FilmTreeGraph({
     const sorted = [...laidOut].sort((a, b) => {
       if (!a.isCenter && b.isCenter) return -1;
       if (a.isCenter && !b.isCenter) return 1;
-      if (a.type === "person" && b.type === "movie") return -1;
-      if (a.type === "movie" && b.type === "person") return 1;
+      if (a.type === "movie" && b.type === "person") return -1;
+      if (a.type === "person" && b.type === "movie") return 1;
       return 0;
     });
 
@@ -457,6 +459,9 @@ export function FilmTreeGraph({
 
     if (graphNode.type !== "movie") {
       setTappedNodeId(graphNode.id);
+      if (onPersonClick && graphNode.name) {
+        onPersonClick(graphNode.tmdbId, graphNode.name);
+      }
       return;
     }
 
@@ -568,7 +573,7 @@ export function FilmTreeGraph({
             ctx.fill();
           } else {
             ctx.beginPath();
-            ctx.arc(x, y, 22, 0, 2 * Math.PI);
+            ctx.arc(x, y, 28, 0, 2 * Math.PI);
             ctx.fill();
           }
         }}

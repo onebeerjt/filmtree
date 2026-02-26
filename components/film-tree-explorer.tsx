@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { FilmTreeGraph } from "@/components/film-tree-graph";
 import { MovieSearch } from "@/components/movie-search";
 import { PLATFORM_META, PLATFORM_ORDER } from "@/lib/streaming";
-import { FilmTreeResponse, GraphNode, MovieSummary, StreamingAvailability, StreamingPlatformKey } from "@/lib/types";
+import { FilmTreeResponse, GraphNode, MovieSummary, PersonSummary, StreamingAvailability, StreamingPlatformKey } from "@/lib/types";
 
 type CacheEnvelope<T> = {
   expiresAt: number;
@@ -190,6 +190,37 @@ export function FilmTreeExplorer() {
     await fetchTree(movieId, { fromGraphClick: true });
   }
 
+  async function jumpToPerson(person: PersonSummary) {
+    try {
+      const response = await fetch(`/api/tmdb/person-seed?personId=${person.id}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.movie?.id) {
+        setToast(`Couldn't find movies for ${person.name}`);
+        return;
+      }
+
+      const movie = payload.movie as MovieSummary;
+      setRootMovieId(movie.id);
+      setRootMovieTitle(movie.title);
+      setJourney([
+        { id: `person-${person.id}`, kind: "person", label: `${person.name} (${person.known_for_department ?? "Person"})` },
+        { id: `movie-${movie.id}`, kind: "movie", label: movie.title }
+      ]);
+      await fetchTree(movie.id);
+    } catch {
+      setToast(`Couldn't load ${person.name}`);
+    }
+  }
+
+  async function handleGraphPersonClick(personId: number, personName: string) {
+    await jumpToPerson({
+      id: personId,
+      name: personName,
+      profile_path: null,
+      known_for_department: "Person"
+    });
+  }
+
   useEffect(() => {
     const bootstrap = async () => {
       setIsLoading(true);
@@ -257,6 +288,7 @@ export function FilmTreeExplorer() {
             nodes={tree.nodes}
             links={tree.links}
             onMovieClick={handleGraphMovieClick}
+            onPersonClick={handleGraphPersonClick}
             onExploreStep={pushJourneyStep}
             pendingMovieId={pendingMovieId}
             failedMovieId={failedMovieId}
@@ -276,6 +308,7 @@ export function FilmTreeExplorer() {
         <div className="pointer-events-auto rounded-full border border-zinc-700/60 bg-zinc-950/55 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
           <MovieSearch
             onMovieSelect={handleSearchSelect}
+            onPersonSelect={jumpToPerson}
             disabled={isLoading}
             isLoading={isLoading || Boolean(pendingMovieId)}
             placeholder="Search any film..."

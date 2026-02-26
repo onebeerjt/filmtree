@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MovieSummary } from "@/lib/types";
+import { MovieSummary, PersonSummary } from "@/lib/types";
 
 type Props = {
   onMovieSelect: (movie: MovieSummary) => void;
+  onPersonSelect?: (person: PersonSummary) => void;
   disabled?: boolean;
   isLoading?: boolean;
   placeholder?: string;
@@ -43,14 +44,20 @@ function setCache<T>(key: string, value: T, ttlMs: number) {
   localStorage.setItem(key, JSON.stringify(envelope));
 }
 
+function normalize(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 export function MovieSearch({
   onMovieSelect,
+  onPersonSelect,
   disabled = false,
   isLoading = false,
   placeholder = "Search any film..."
 }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MovieSummary[]>([]);
+  const [people, setPeople] = useState<PersonSummary[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showList, setShowList] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,44 +75,64 @@ export function MovieSearch({
 
   useEffect(() => {
     const trimmed = query.trim();
+    const personSearchEnabled = Boolean(onPersonSelect);
 
     if (!trimmed || trimmed.length < 2) {
       setResults([]);
+      setPeople([]);
       return;
     }
 
     const timeout = setTimeout(async () => {
-      const cacheKey = `film-tree:search:${trimmed.toLowerCase()}`;
-      const cached = getCache<MovieSummary[]>(cacheKey);
-      if (cached) {
-        setResults(cached);
+      const moviesKey = `film-tree:search:movies:${trimmed.toLowerCase()}`;
+      const peopleKey = `film-tree:search:people:${trimmed.toLowerCase()}`;
+      const cachedMovies = getCache<MovieSummary[]>(moviesKey);
+      const cachedPeople = getCache<PersonSummary[]>(peopleKey);
+
+      if (cachedMovies && (!personSearchEnabled || cachedPeople)) {
+        setResults(cachedMovies);
+        setPeople(personSearchEnabled ? cachedPeople ?? [] : []);
         return;
       }
 
       setIsSearching(true);
       try {
-        const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent(trimmed)}`);
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Search request failed");
+        const [movieResponse, personResponse] = await Promise.all([
+          fetch(`/api/tmdb/search?query=${encodeURIComponent(trimmed)}`),
+          personSearchEnabled ? fetch(`/api/tmdb/person-search?query=${encodeURIComponent(trimmed)}`) : Promise.resolve(null)
+        ]);
+
+        const moviePayload = await movieResponse.json();
+        if (!movieResponse.ok) {
+          throw new Error(moviePayload.error ?? "Movie search failed");
         }
 
-        const movies = (payload.results ?? []) as MovieSummary[];
-        setResults(movies.slice(0, 6));
-        setCache(cacheKey, movies.slice(0, 6), SEARCH_CACHE_TTL_MS);
+        const movieResults = ((moviePayload.results ?? []) as MovieSummary[]).slice(0, 6);
+        setResults(movieResults);
+        setCache(moviesKey, movieResults, SEARCH_CACHE_TTL_MS);
+
+        if (personResponse) {
+          const personPayload = await personResponse.json();
+          if (personResponse.ok) {
+            const personResults = ((personPayload.results ?? []) as PersonSummary[]).slice(0, 6);
+            setPeople(personResults);
+            setCache(peopleKey, personResults, SEARCH_CACHE_TTL_MS);
+          } else {
+            setPeople([]);
+          }
+        } else {
+          setPeople([]);
+        }
       } catch {
         setResults([]);
+        setPeople([]);
       } finally {
         setIsSearching(false);
       }
     }, 320);
 
     return () => clearTimeout(timeout);
-  }, [query]);
-
-  function normalizeTitle(value: string) {
-    return value.trim().toLowerCase().replace(/\s+/g, " ");
-  }
+  }, [onPersonSelect, query]);
 
   function selectMovie(movie: MovieSummary) {
     const year = movie.release_date?.slice(0, 4) || "N/A";
@@ -114,13 +141,29 @@ export function MovieSearch({
     setShowList(false);
   }
 
-  function pickBestMatch(input: string, movies: MovieSummary[]) {
-    const normalizedInput = normalizeTitle(input);
-    const exact = movies.find((movie) => normalizeTitle(movie.title) === normalizedInput);
+  function selectPerson(person: PersonSummary) {
+    if (!onPersonSelect) return;
+    onPersonSelect(person);
+    setQuery(person.name);
+    setShowList(false);
+  }
+
+  function pickBestMovieMatch(input: string, movies: MovieSummary[]) {
+    const normalizedInput = normalize(input);
+    const exact = movies.find((movie) => normalize(movie.title) === normalizedInput);
     if (exact) return exact;
 
-    const startsWith = movies.find((movie) => normalizeTitle(movie.title).startsWith(normalizedInput));
+    const startsWith = movies.find((movie) => normalize(movie.title).startsWith(normalizedInput));
     return startsWith ?? movies[0] ?? null;
+  }
+
+  function pickBestPersonMatch(input: string, persons: PersonSummary[]) {
+    const normalizedInput = normalize(input);
+    const exact = persons.find((person) => normalize(person.name) === normalizedInput);
+    if (exact) return exact;
+
+    const startsWith = persons.find((person) => normalize(person.name).startsWith(normalizedInput));
+    return startsWith ?? persons[0] ?? null;
   }
 
   return (
@@ -135,18 +178,32 @@ export function MovieSearch({
           onFocus={() => setShowList(true)}
           onKeyDown={(event) => {
             if (event.key !== "Enter") return;
-            if (isSearching || results.length === 0) return;
+            if (isSearching || (results.length === 0 && people.length === 0)) return;
 
             event.preventDefault();
-            const match = pickBestMatch(query, results);
-            if (match) {
-              selectMovie(match);
+            const movieMatch = pickBestMovieMatch(query, results);
+            const personMatch = pickBestPersonMatch(query, people);
+
+            if (movieMatch && normalize(movieMatch.title) === normalize(query)) {
+              selectMovie(movieMatch);
+              return;
+            }
+            if (personMatch && onPersonSelect && normalize(personMatch.name) === normalize(query)) {
+              selectPerson(personMatch);
+              return;
+            }
+            if (movieMatch) {
+              selectMovie(movieMatch);
+              return;
+            }
+            if (personMatch && onPersonSelect) {
+              selectPerson(personMatch);
             }
           }}
           disabled={disabled}
           className="h-12 w-full rounded-full border border-zinc-600/70 bg-zinc-950/55 px-5 pr-12 text-sm text-white outline-none transition focus:border-[#c9a84c] focus:bg-zinc-900/65"
           placeholder={placeholder}
-          aria-label="Search for a movie"
+          aria-label="Search for a movie or person"
         />
         {isLoading && (
           <span className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border-2 border-zinc-600 border-t-[#c9a84c] animate-spin" />
@@ -157,8 +214,8 @@ export function MovieSearch({
         <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[52vh] w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
           {isSearching && <p className="px-3 py-3 text-sm text-zinc-400">Searching...</p>}
 
-          {!isSearching && results.length === 0 && (
-            <p className="px-3 py-3 text-sm text-zinc-500">No movies found.</p>
+          {!isSearching && results.length === 0 && people.length === 0 && (
+            <p className="px-3 py-3 text-sm text-zinc-500">No results found.</p>
           )}
 
           {!isSearching &&
@@ -166,13 +223,28 @@ export function MovieSearch({
               const year = movie.release_date?.slice(0, 4) || "N/A";
               return (
                 <button
-                  key={movie.id}
+                  key={`movie-${movie.id}`}
                   type="button"
                   onClick={() => selectMovie(movie)}
                   className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-3 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
                 >
                   <span className="text-zinc-100">{movie.title}</span>
                   <span className="text-zinc-500">{year}</span>
+                </button>
+              );
+            })}
+
+          {!isSearching &&
+            people.map((person) => {
+              return (
+                <button
+                  key={`person-${person.id}`}
+                  type="button"
+                  onClick={() => selectPerson(person)}
+                  className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-3 text-left text-sm transition last:border-b-0 hover:bg-zinc-900"
+                >
+                  <span className="text-zinc-100">{person.name}</span>
+                  <span className="text-zinc-500">{person.known_for_department ?? "Person"}</span>
                 </button>
               );
             })}

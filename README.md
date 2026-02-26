@@ -5,6 +5,7 @@ Film Tree is a Next.js 14 app that visualizes how films connect through shared c
 ## Features
 
 - Search any movie title.
+- Search movie titles and people (actors/directors/writers/producers).
 - Interactive force graph centered on the selected movie.
 - First ring includes top 5 cast + director + writer.
 - Second ring includes up to 4 notable films for each person.
@@ -77,5 +78,6 @@ Official docs: [TMDB API Documentation](https://developer.themoviedb.org/docs/ge
 - `/search/movie`
 - `/movie/{id}/credits`
 - `/person/{id}/movie_credits`
+- `/search/person`
 - Watchmode `/search` (TMDB ID lookup)
 - Watchmode `/title/{id}/sources`

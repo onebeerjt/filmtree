@@ -1,4 +1,4 @@
-import { FilmTreeResponse, MovieSummary, PersonCredit } from "@/lib/types";
+import { FilmTreeResponse, MovieSummary, PersonCredit, PersonSummary } from "@/lib/types";
 
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 
@@ -12,8 +12,8 @@ type CreditsResponse = {
 };
 
 type PersonMovieCreditsResponse = {
-  cast: MovieSummary[];
-  crew: MovieSummary[];
+  cast: Array<MovieSummary & { character?: string }>;
+  crew: Array<MovieSummary & { department?: string; job?: string }>;
 };
 
 function getApiKey() {
@@ -52,6 +52,17 @@ export async function searchMovies(query: string) {
   });
 
   return data.results.slice(0, 10);
+}
+
+export async function searchPeople(query: string) {
+  const data = await tmdbFetch<{ results: PersonSummary[] }>("/search/person", {
+    query,
+    include_adult: "false",
+    language: "en-US",
+    page: "1"
+  });
+
+  return data.results.slice(0, 8);
 }
 
 async function getMovieDetails(movieId: number) {
@@ -143,6 +154,13 @@ function selectNotableMovies(movies: MovieSummary[], centerMovieId: number, limi
     .slice(0, limit);
 }
 
+export async function getPersonSeedMovie(personId: number) {
+  const credits = await getPersonMovieCredits(personId);
+  const prioritized = [...credits.crew.filter((m) => m.job === "Director"), ...credits.cast, ...credits.crew];
+  const candidate = selectNotableMovies(prioritized, -1, 1)[0];
+  return candidate ?? null;
+}
+
 export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> {
   const [centerMovie, credits] = await Promise.all([getMovieDetails(movieId), getMovieCredits(movieId)]);
   const corePeople = pickCorePeople(credits);
@@ -168,8 +186,12 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
   const relatedMoviesByPerson = await Promise.all(
     corePeople.map(async (person) => {
       const movieCredits = await getPersonMovieCredits(person.id);
-      const merged = [...movieCredits.cast, ...movieCredits.crew];
-      const perPersonLimit = person.role === "Actor" ? 6 : 8;
+      const merged =
+        person.role === "Director"
+          ? [...movieCredits.crew.filter((m) => m.job === "Director"), ...movieCredits.cast, ...movieCredits.crew]
+          : [...movieCredits.cast, ...movieCredits.crew];
+
+      const perPersonLimit = person.role === "Actor" ? 8 : person.role === "Director" ? 14 : 12;
       return {
         person,
         relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit)

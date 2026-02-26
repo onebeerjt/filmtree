@@ -8,6 +8,13 @@ export type MovieSummary = {
   vote_count?: number;
 };
 
+export type PersonSummary = {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department?: string;
+};
+
 export type PersonCredit = {
   id: number;
   name: string;

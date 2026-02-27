@@ -14,7 +14,7 @@ type CacheEnvelope<T> = {
 const TREE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 const TREE_CACHE_VERSION = "v7";
 const STREAMING_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
-const STREAMING_CACHE_VERSION = "v1";
+const STREAMING_CACHE_VERSION = "v2";
 const RANDOM_SEED_TITLES = [
   "Inception",
   "The Dark Knight",

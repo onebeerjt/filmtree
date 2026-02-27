@@ -685,8 +685,14 @@ export function FilmTreeGraph({
             const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
             const badgePlatforms = availability?.all?.slice(0, 3) ?? [];
+            const selectedBadgePlatforms =
+              selectedPlatforms.length > 0
+                ? (availability?.all?.filter((platform) => selectedPlatforms.includes(platform)).slice(0, 3) ?? [])
+                : [];
             const nodeAlpha = selectedPlatforms.length > 0
-              ? isFilterMiss
+              ? graphNode.isCenter
+                ? 1
+                : isFilterMiss
                 ? graphNode.isCenter
                   ? 0.45
                   : 0.14
@@ -769,6 +775,27 @@ export function FilmTreeGraph({
                 ctx.beginPath();
                 ctx.arc(bx + badgeSize / 2, by + badgeSize / 2, badgeSize / 2 + 1.2, 0, Math.PI * 2);
                 ctx.fillStyle = "rgba(10,10,14,0.95)";
+                ctx.fill();
+                if (icon.status === "loaded") {
+                  ctx.drawImage(icon.img, bx, by, badgeSize, badgeSize);
+                }
+              });
+            }
+
+            if (selectedPlatforms.length > 0 && selectedBadgePlatforms.length > 0 && (isFilterHit || graphNode.isCenter)) {
+              const badgeSize = Math.max(11, Math.round(w * 0.16));
+              const gap = 3;
+              const totalW = selectedBadgePlatforms.length * badgeSize + (selectedBadgePlatforms.length - 1) * gap;
+              const startX = x - totalW / 2;
+              const by = y + h / 2 + 6;
+
+              selectedBadgePlatforms.forEach((platform, index) => {
+                const meta = PLATFORM_META[platform];
+                const icon = loadImage(meta.logoUrl);
+                const bx = startX + index * (badgeSize + gap);
+                ctx.beginPath();
+                ctx.roundRect(bx - 1.4, by - 1.4, badgeSize + 2.8, badgeSize + 2.8, 5);
+                ctx.fillStyle = "rgba(10,10,14,0.92)";
                 ctx.fill();
                 if (icon.status === "loaded") {
                   ctx.drawImage(icon.img, bx, by, badgeSize, badgeSize);

@@ -91,6 +91,7 @@ export function FilmTreeExplorer() {
   const [rootMovieTitle, setRootMovieTitle] = useState<string>("");
   const [streamingByMovieId, setStreamingByMovieId] = useState<Record<number, StreamingAvailability>>({});
   const [selectedPlatforms, setSelectedPlatforms] = useState<StreamingPlatformKey[]>([]);
+  const [showLinks, setShowLinks] = useState(true);
 
   function getStreamingCache(tmdbId: number) {
     return getTreeCache<StreamingAvailability>(`film-tree:streaming:${STREAMING_CACHE_VERSION}:${tmdbId}`);
@@ -123,32 +124,34 @@ export function FilmTreeExplorer() {
 
     if (missingMovies.length === 0) return;
 
-    const nextMap: Record<number, StreamingAvailability> = {};
-    for (const movie of missingMovies) {
-      try {
-        const params = new URLSearchParams({
-          tmdbId: String(movie.tmdbId)
-        });
-        if (movie.title) params.set("title", movie.title);
-        if (movie.year) params.set("year", movie.year);
+    const fetched = await Promise.all(
+      missingMovies.map(async (movie) => {
+        try {
+          const params = new URLSearchParams({
+            tmdbId: String(movie.tmdbId)
+          });
+          if (movie.title) params.set("title", movie.title);
+          if (movie.year) params.set("year", movie.year);
 
-        const response = await fetch(`/api/streaming?${params.toString()}`);
-        if (!response.ok) {
+          const response = await fetch(`/api/streaming?${params.toString()}`);
+          if (!response.ok) {
+            const empty = emptyStreamingAvailability(movie.tmdbId);
+            setStreamingCache(movie.tmdbId, empty);
+            return [movie.tmdbId, empty] as const;
+          }
+          const value = (await response.json()) as StreamingAvailability;
+          const normalized = !value || value.tmdbId !== movie.tmdbId ? emptyStreamingAvailability(movie.tmdbId) : value;
+          setStreamingCache(movie.tmdbId, normalized);
+          return [movie.tmdbId, normalized] as const;
+        } catch {
           const empty = emptyStreamingAvailability(movie.tmdbId);
-          nextMap[movie.tmdbId] = empty;
           setStreamingCache(movie.tmdbId, empty);
-          continue;
+          return [movie.tmdbId, empty] as const;
         }
-        const value = (await response.json()) as StreamingAvailability;
-        const normalized = !value || value.tmdbId !== movie.tmdbId ? emptyStreamingAvailability(movie.tmdbId) : value;
-        nextMap[movie.tmdbId] = normalized;
-        setStreamingCache(movie.tmdbId, normalized);
-      } catch {
-        const empty = emptyStreamingAvailability(movie.tmdbId);
-        nextMap[movie.tmdbId] = empty;
-        setStreamingCache(movie.tmdbId, empty);
-      }
-    }
+      })
+    );
+
+    const nextMap: Record<number, StreamingAvailability> = Object.fromEntries(fetched);
 
     if (Object.keys(nextMap).length > 0) {
       setStreamingByMovieId((prev) => ({ ...prev, ...nextMap }));
@@ -351,6 +354,7 @@ export function FilmTreeExplorer() {
             failedMovieId={failedMovieId}
             streamingByMovieId={streamingByMovieId}
             selectedPlatforms={selectedPlatforms}
+            showLinks={showLinks}
           />
         </div>
       )}
@@ -404,13 +408,26 @@ export function FilmTreeExplorer() {
         <div className="pointer-events-auto rounded-2xl border border-zinc-700/60 bg-zinc-950/55 p-2.5 shadow-[0_16px_36px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Streaming</p>
-            <button
-              type="button"
-              onClick={() => setSelectedPlatforms([])}
-              className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
-            >
-              Clear
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLinks((prev) => !prev)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                  showLinks
+                    ? "border-[#c9a84c]/80 bg-[#c9a84c]/10 text-[#f4e4a6]"
+                    : "border-zinc-600/80 bg-zinc-900/70 text-zinc-200"
+                }`}
+              >
+                {showLinks ? "Lines On" : "Lines Off"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPlatforms([])}
+                className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {PLATFORM_ORDER.map((key) => {
@@ -428,7 +445,14 @@ export function FilmTreeExplorer() {
                     color: active ? "#ffffff" : "rgba(255,255,255,0.82)"
                   }}
                 >
-                  <img src={meta.logoUrl} alt={meta.label} className="h-3.5 w-3.5 object-contain" />
+                  <img
+                    src={meta.logoUrl}
+                    alt={meta.label}
+                    className="h-3.5 w-3.5 object-contain"
+                    onError={(event) => {
+                      (event.currentTarget as HTMLImageElement).style.display = "none";
+                    }}
+                  />
                   <span>{meta.shortLabel}</span>
                 </button>
               );

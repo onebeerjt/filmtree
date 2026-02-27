@@ -31,6 +31,7 @@ type Props = {
   failedMovieId: number | null;
   streamingByMovieId: Record<number, StreamingAvailability>;
   selectedPlatforms: StreamingPlatformKey[];
+  showLinks?: boolean;
 };
 
 type PositionedNode = GraphNode & {
@@ -325,7 +326,8 @@ export function FilmTreeGraph({
   pendingMovieId,
   failedMovieId,
   streamingByMovieId,
-  selectedPlatforms
+  selectedPlatforms,
+  showLinks = true
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods>();
@@ -470,8 +472,8 @@ export function FilmTreeGraph({
   function movieMatchesPlatformFilter(graphNode: PositionedNode) {
     if (graphNode.type !== "movie" || selectedPlatforms.length === 0) return true;
     const availability = streamingByMovieId[graphNode.tmdbId];
-    if (!availability) return false;
-    return selectedPlatforms.some((platform) => availability.all.includes(platform));
+    if (!availability) return true;
+    return selectedPlatforms.some((platform) => availability.subscription.includes(platform));
   }
 
   function activateNode(graphNode: PositionedNode) {
@@ -575,6 +577,7 @@ export function FilmTreeGraph({
         enableNodeDrag={false}
         enablePointerInteraction
         linkWidth={(link) => {
+          if (!showLinks) return 0;
           const line = link as PositionedLink;
           const sourceId = linkEndId(line.source);
           const targetId = linkEndId(line.target);
@@ -598,6 +601,7 @@ export function FilmTreeGraph({
           return isCenterToPerson ? 2.1 : 1.1;
         }}
         linkColor={(link) => {
+          if (!showLinks) return "rgba(0,0,0,0)";
           const line = link as PositionedLink;
           const sourceId = linkEndId(line.source);
           const targetId = linkEndId(line.target);
@@ -684,10 +688,10 @@ export function FilmTreeGraph({
             const isFilterMiss = selectedPlatforms.length > 0 && !movieMatchesPlatformFilter(graphNode);
             const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
-            const badgePlatforms = availability?.all?.slice(0, 3) ?? [];
+            const badgePlatforms = availability?.subscription?.slice(0, 3) ?? [];
             const selectedBadgePlatforms =
               selectedPlatforms.length > 0
-                ? (availability?.all?.filter((platform) => selectedPlatforms.includes(platform)).slice(0, 3) ?? [])
+                ? (availability?.subscription?.filter((platform) => selectedPlatforms.includes(platform)).slice(0, 3) ?? [])
                 : [];
             const nodeAlpha = selectedPlatforms.length > 0
               ? graphNode.isCenter
@@ -778,6 +782,11 @@ export function FilmTreeGraph({
                 ctx.fill();
                 if (icon.status === "loaded") {
                   ctx.drawImage(icon.img, bx, by, badgeSize, badgeSize);
+                } else {
+                  ctx.fillStyle = meta.color;
+                  ctx.font = `700 8px IBM Plex Sans, sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.fillText(meta.shortLabel.slice(0, 1), bx + badgeSize / 2, by + badgeSize / 2 + 3);
                 }
               });
             }
@@ -799,6 +808,11 @@ export function FilmTreeGraph({
                 ctx.fill();
                 if (icon.status === "loaded") {
                   ctx.drawImage(icon.img, bx, by, badgeSize, badgeSize);
+                } else {
+                  ctx.fillStyle = meta.color;
+                  ctx.font = `700 ${Math.max(8, Math.round(badgeSize * 0.62))}px IBM Plex Sans, sans-serif`;
+                  ctx.textAlign = "center";
+                  ctx.fillText(meta.shortLabel.slice(0, 1), bx + badgeSize / 2, by + badgeSize / 2 + 3);
                 }
               });
             }

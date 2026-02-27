@@ -15,9 +15,10 @@ export const PLATFORM_ORDER: StreamingPlatformKey[] = [
   "max",
   "disney",
   "prime",
-  "apple",
   "peacock",
-  "paramount"
+  "paramount",
+  "tubi",
+  "plex"
 ];
 
 export const PLATFORM_META: Record<StreamingPlatformKey, PlatformMeta> = {
@@ -50,7 +51,7 @@ export const PLATFORM_META: Record<StreamingPlatformKey, PlatformMeta> = {
     label: "Disney+",
     shortLabel: "Disney+",
     color: "#113CCF",
-    logoUrl: "https://cdn.simpleicons.org/disney+/113CCF",
+    logoUrl: "https://cdn.simpleicons.org/disneyplus/113CCF",
     aliases: ["disney", "disney+", "disney plus"]
   },
   prime: {
@@ -58,23 +59,15 @@ export const PLATFORM_META: Record<StreamingPlatformKey, PlatformMeta> = {
     label: "Amazon Prime",
     shortLabel: "Prime",
     color: "#00A8E1",
-    logoUrl: "https://cdn.simpleicons.org/amazonprime/00A8E1",
+    logoUrl: "https://cdn.simpleicons.org/primevideo/00A8E1",
     aliases: ["prime", "prime video", "amazon prime", "amazon prime video", "amazonvideo"]
-  },
-  apple: {
-    key: "apple",
-    label: "Apple TV+",
-    shortLabel: "Apple TV+",
-    color: "#A3AAAE",
-    logoUrl: "https://cdn.simpleicons.org/appletv/A3AAAE",
-    aliases: ["apple", "apple tv", "apple tv+", "appletv+"]
   },
   peacock: {
     key: "peacock",
     label: "Peacock",
     shortLabel: "Peacock",
     color: "#00B3FF",
-    logoUrl: "https://cdn.simpleicons.org/peacock/00B3FF",
+    logoUrl: "https://cdn.simpleicons.org/peacocktv/00B3FF",
     aliases: ["peacock"]
   },
   paramount: {
@@ -82,8 +75,24 @@ export const PLATFORM_META: Record<StreamingPlatformKey, PlatformMeta> = {
     label: "Paramount+",
     shortLabel: "Paramount+",
     color: "#0064FF",
-    logoUrl: "https://cdn.simpleicons.org/paramount+/0064FF",
+    logoUrl: "https://cdn.simpleicons.org/paramountplus/0064FF",
     aliases: ["paramount", "paramount+", "paramount plus"]
+  },
+  tubi: {
+    key: "tubi",
+    label: "Tubi",
+    shortLabel: "Tubi",
+    color: "#9D00FF",
+    logoUrl: "https://cdn.simpleicons.org/tubi/9D00FF",
+    aliases: ["tubi", "tubi tv"]
+  },
+  plex: {
+    key: "plex",
+    label: "Plex",
+    shortLabel: "Plex",
+    color: "#EBAF00",
+    logoUrl: "https://cdn.simpleicons.org/plex/EBAF00",
+    aliases: ["plex"]
   }
 };
 

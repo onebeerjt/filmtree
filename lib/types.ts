@@ -57,9 +57,10 @@ export type StreamingPlatformKey =
   | "max"
   | "disney"
   | "prime"
-  | "apple"
   | "peacock"
-  | "paramount";
+  | "paramount"
+  | "tubi"
+  | "plex";
 
 export type StreamingAvailability = {
   tmdbId: number;

@@ -15,6 +15,7 @@ type DebugRow = {
   rawSourceCount?: number;
   normalized: StreamingAvailability;
   message?: string;
+  attempts?: string;
 };
 
 function platformList(value: string[]) {
@@ -92,7 +93,15 @@ export function StreamingDebug() {
             sourceStatus: payload.sourceStatus,
             rawSourceCount: payload.rawSourceCount,
             normalized: payload.normalized as StreamingAvailability,
-            message: payload.message as string | undefined
+            message: payload.message as string | undefined,
+            attempts: Array.isArray(payload.attempts)
+              ? payload.attempts
+                  .map(
+                    (a: { strategy?: string; status?: number; resultCount?: number; errorBody?: string }) =>
+                      `${a.strategy ?? "attempt"}:${a.status ?? "?"}/${a.resultCount ?? 0}${a.errorBody ? ` (${a.errorBody})` : ""}`
+                  )
+                  .join(" | ")
+              : undefined
           } satisfies DebugRow;
         })
       );
@@ -195,6 +204,7 @@ export function StreamingDebug() {
                     <th className="px-3 py-2">Rent</th>
                     <th className="px-3 py-2">Buy</th>
                     <th className="px-3 py-2">Message</th>
+                    <th className="px-3 py-2">Attempts</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -215,6 +225,7 @@ export function StreamingDebug() {
                       <td className="px-3 py-2 text-zinc-300">{platformList(row.normalized.rent)}</td>
                       <td className="px-3 py-2 text-zinc-300">{platformList(row.normalized.buy)}</td>
                       <td className="px-3 py-2 text-zinc-400">{row.message ?? ""}</td>
+                      <td className="px-3 py-2 text-zinc-500">{row.attempts ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>

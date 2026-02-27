@@ -26,6 +26,12 @@ type TitleLookupResult = {
   titleId: number | null;
 };
 
+type SearchAttempt = {
+  endpoint: string;
+  status: number;
+  candidates: WatchmodeSearchTitle[];
+};
+
 function emptyAvailability(tmdbId: number): StreamingAvailability {
   return {
     tmdbId,
@@ -100,20 +106,8 @@ function scoreTitleCandidate(candidate: WatchmodeSearchTitle, requestedTitle: st
 }
 
 async function lookupTitleByTmdbId(apiKey: string, tmdbId: number): Promise<TitleLookupResult> {
-  const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
-  searchUrl.searchParams.set("apiKey", apiKey);
-  searchUrl.searchParams.set("search_field", "tmdb_id");
-  searchUrl.searchParams.set("search_value", String(tmdbId));
-  searchUrl.searchParams.set("types", "movie");
-
-  const searchResponse = await fetch(searchUrl.toString(), {
-    headers: { Accept: "application/json" },
-    next: { revalidate: 60 * 60 * 12 }
-  });
-  if (!searchResponse.ok) return { titleId: null };
-
-  const payload = (await searchResponse.json()) as WatchmodeSearchResponse;
-  return { titleId: payload.title_results?.[0]?.id ?? null };
+  const attempts = await runWatchmodeSearchAttempts(apiKey, [{ endpoint: "/search/", params: { search_field: "tmdb_id", search_value: String(tmdbId), types: "movie" } }]);
+  return { titleId: attempts.flatMap((a) => a.candidates)[0]?.id ?? null };
 }
 
 async function lookupTitleByName(
@@ -121,39 +115,66 @@ async function lookupTitleByName(
   title: string,
   year?: number | null
 ): Promise<TitleLookupResult> {
-  const fields = ["name", "title"];
+  const attempts = await runWatchmodeSearchAttempts(apiKey, [
+    { endpoint: "/search/", params: { search_field: "name", search_value: title, types: "movie" } },
+    { endpoint: "/search/", params: { search_field: "name", search_value: title } },
+    { endpoint: "/search/", params: { search_value: title } },
+    { endpoint: "/autocomplete-search/", params: { search_value: title, search_type: "3" } },
+    { endpoint: "/search-title/", params: { search_value: title } }
+  ]);
 
-  for (const field of fields) {
-    const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
-    searchUrl.searchParams.set("apiKey", apiKey);
-    searchUrl.searchParams.set("search_field", field);
-    searchUrl.searchParams.set("search_value", title);
-    searchUrl.searchParams.set("types", "movie");
-
-    const searchResponse = await fetch(searchUrl.toString(), {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 60 * 60 * 12 }
-    });
-    if (!searchResponse.ok) continue;
-
-    const payload = (await searchResponse.json()) as WatchmodeSearchResponse;
-    const results = payload.title_results ?? [];
-    if (results.length === 0) continue;
-
+  const candidates = attempts.flatMap((a) => a.candidates);
+  if (candidates.length > 0) {
     let best: WatchmodeSearchTitle | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
-    for (const result of results) {
+    for (const result of candidates) {
       const score = scoreTitleCandidate(result, title, year);
       if (score > bestScore) {
         best = result;
         bestScore = score;
       }
     }
-
     if (best?.id) return { titleId: best.id };
   }
 
   return { titleId: null };
+}
+
+async function runWatchmodeSearchAttempts(
+  apiKey: string,
+  attemptsConfig: Array<{ endpoint: string; params: Record<string, string> }>
+) {
+  const attempts: SearchAttempt[] = [];
+
+  for (const config of attemptsConfig) {
+    const url = new URL(`${WATCHMODE_BASE_URL}${config.endpoint}`);
+    url.searchParams.set("apiKey", apiKey);
+    for (const [key, value] of Object.entries(config.params)) {
+      url.searchParams.set(key, value);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      next: { revalidate: 60 * 60 * 12 }
+    });
+
+    if (!response.ok) {
+      attempts.push({ endpoint: `${config.endpoint}?${url.searchParams.toString()}`, status: response.status, candidates: [] });
+      continue;
+    }
+
+    const payload = (await response.json()) as WatchmodeSearchResponse & { results?: WatchmodeSearchTitle[] };
+    const candidates = Array.isArray(payload.title_results)
+      ? payload.title_results
+      : Array.isArray(payload.results)
+        ? payload.results
+        : [];
+
+    attempts.push({ endpoint: `${config.endpoint}?${url.searchParams.toString()}`, status: response.status, candidates });
+    if (candidates.length > 0) break;
+  }
+
+  return attempts;
 }
 
 export async function GET(request: NextRequest) {

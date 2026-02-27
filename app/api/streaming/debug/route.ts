@@ -29,6 +29,7 @@ type SearchAttempt = {
   strategy: string;
   status: number;
   resultCount: number;
+  errorBody?: string;
 };
 
 function emptyAvailability(tmdbId: number): StreamingAvailability {
@@ -106,15 +107,16 @@ function scoreTitleCandidate(candidate: WatchmodeSearchTitle, requestedTitle: st
 
 async function runSearch(
   apiKey: string,
-  field: string,
-  value: string,
+  endpoint: string,
+  params: Record<string, string>,
+  strategy: string,
   attempts: SearchAttempt[]
 ): Promise<WatchmodeSearchTitle[]> {
-  const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
+  const searchUrl = new URL(`${WATCHMODE_BASE_URL}${endpoint}`);
   searchUrl.searchParams.set("apiKey", apiKey);
-  searchUrl.searchParams.set("search_field", field);
-  searchUrl.searchParams.set("search_value", value);
-  searchUrl.searchParams.set("types", "movie");
+  for (const [key, value] of Object.entries(params)) {
+    searchUrl.searchParams.set(key, value);
+  }
 
   const searchResponse = await fetch(searchUrl.toString(), {
     headers: { Accept: "application/json" },
@@ -122,13 +124,18 @@ async function runSearch(
   });
 
   if (!searchResponse.ok) {
-    attempts.push({ strategy: `${field}:${value}`, status: searchResponse.status, resultCount: 0 });
+    const errorBody = (await searchResponse.text()).slice(0, 300);
+    attempts.push({ strategy, status: searchResponse.status, resultCount: 0, errorBody });
     return [];
   }
 
-  const payload = (await searchResponse.json()) as WatchmodeSearchResponse;
-  const results = payload.title_results ?? [];
-  attempts.push({ strategy: `${field}:${value}`, status: searchResponse.status, resultCount: results.length });
+  const payload = (await searchResponse.json()) as WatchmodeSearchResponse & { results?: WatchmodeSearchTitle[] };
+  const results = Array.isArray(payload.title_results)
+    ? payload.title_results
+    : Array.isArray(payload.results)
+      ? payload.results
+      : [];
+  attempts.push({ strategy, status: searchResponse.status, resultCount: results.length });
   return results;
 }
 
@@ -158,13 +165,27 @@ export async function GET(request: NextRequest) {
   try {
     const attempts: SearchAttempt[] = [];
 
-    const byTmdb = await runSearch(watchmodeKey, "tmdb_id", String(tmdbId), attempts);
+    const byTmdb = await runSearch(
+      watchmodeKey,
+      "/search/",
+      { search_field: "tmdb_id", search_value: String(tmdbId), types: "movie" },
+      "search:tmdb_id",
+      attempts
+    );
     let picked: WatchmodeSearchTitle | null = byTmdb[0] ?? null;
     let lookupStrategy = "tmdb_id";
 
     if (!picked && title) {
-      for (const field of ["name", "title"]) {
-        const results = await runSearch(watchmodeKey, field, title, attempts);
+      const searchPlans: Array<{ endpoint: string; params: Record<string, string>; strategy: string }> = [
+        { endpoint: "/search/", params: { search_field: "name", search_value: title, types: "movie" }, strategy: "search:name+types" },
+        { endpoint: "/search/", params: { search_field: "name", search_value: title }, strategy: "search:name" },
+        { endpoint: "/search/", params: { search_value: title }, strategy: "search:generic" },
+        { endpoint: "/autocomplete-search/", params: { search_value: title, search_type: "3" }, strategy: "autocomplete-search" },
+        { endpoint: "/search-title/", params: { search_value: title }, strategy: "search-title" }
+      ];
+
+      for (const plan of searchPlans) {
+        const results = await runSearch(watchmodeKey, plan.endpoint, plan.params, plan.strategy, attempts);
         if (results.length === 0) continue;
         let best: WatchmodeSearchTitle | null = null;
         let bestScore = Number.NEGATIVE_INFINITY;
@@ -177,7 +198,7 @@ export async function GET(request: NextRequest) {
         }
         if (best) {
           picked = best;
-          lookupStrategy = `${field}_fallback`;
+          lookupStrategy = plan.strategy;
           break;
         }
       }

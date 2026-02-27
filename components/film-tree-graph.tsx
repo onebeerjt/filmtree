@@ -89,9 +89,7 @@ function loadImage(src: string) {
     lastAttemptAt: now
   };
 
-  img.crossOrigin = "anonymous";
   img.decoding = "async";
-  img.referrerPolicy = "no-referrer";
   img.onload = () => {
     entry.status = img.naturalWidth > 0 && img.naturalHeight > 0 ? "loaded" : "error";
   };
@@ -365,6 +363,17 @@ export function FilmTreeGraph({
     const timer = setInterval(() => setTick((v) => v + 1), 33);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    for (const node of nodes) {
+      if (node.type === "movie" && node.posterPath) {
+        loadImage(`${IMAGE_BASE}${node.posterPath}`);
+      }
+      if (node.type === "person" && node.profilePath) {
+        loadImage(`${IMAGE_BASE}${node.profilePath}`);
+      }
+    }
+  }, [nodes]);
 
   const graphData = useMemo(() => {
     const laidOut = layoutNodes(nodes, links, focusNodeId);
@@ -685,6 +694,7 @@ export function FilmTreeGraph({
 
             const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
+            const hasHoverFocus = Boolean(hoveredId);
             const isFilterMiss = selectedPlatforms.length > 0 && !movieMatchesPlatformFilter(graphNode);
             const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
@@ -693,15 +703,20 @@ export function FilmTreeGraph({
               selectedPlatforms.length > 0
                 ? (availability?.subscription?.filter((platform) => selectedPlatforms.includes(platform)).slice(0, 3) ?? [])
                 : [];
-            const nodeAlpha = selectedPlatforms.length > 0
-              ? graphNode.isCenter
-                ? 1
-                : isFilterMiss
-                ? graphNode.isCenter
-                  ? 0.45
-                  : 0.14
-                : 1
-              : 1;
+            const hoverScale = isHovered ? 1.2 : isConnected ? 1.08 : hasHoverFocus ? 0.95 : 1;
+            w *= hoverScale;
+            h *= hoverScale;
+
+            let nodeAlpha = 1;
+            if (selectedPlatforms.length > 0 && !graphNode.isCenter && isFilterMiss) {
+              nodeAlpha = 0.14;
+            }
+            if (hasHoverFocus) {
+              if (isHovered) nodeAlpha = 1;
+              else if (isConnected) nodeAlpha = Math.max(nodeAlpha, 0.94);
+              else nodeAlpha = Math.min(nodeAlpha, 0.2);
+            }
+            if (graphNode.isCenter) nodeAlpha = Math.max(nodeAlpha, 1);
 
             ctx.save();
             ctx.globalAlpha = nodeAlpha;
@@ -858,16 +873,21 @@ export function FilmTreeGraph({
           const radius = 20;
           const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
           const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
+          const hasHoverFocus = Boolean(hoveredId);
+          const personRadius = isHovered ? radius * 1.16 : isConnected ? radius * 1.06 : hasHoverFocus ? radius * 0.94 : radius;
+          const personAlpha = hasHoverFocus ? (isHovered ? 1 : isConnected ? 0.9 : 0.22) : 1;
           const fill = roleColor(graphNode.role);
+          ctx.save();
+          ctx.globalAlpha = personAlpha;
           if (graphNode.profilePath) {
             const image = loadImage(`${IMAGE_BASE}${graphNode.profilePath}`);
             ctx.save();
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.arc(x, y, personRadius, 0, 2 * Math.PI);
             ctx.closePath();
             ctx.clip();
             if (image.status === "loaded") {
-              ctx.drawImage(image.img, x - radius, y - radius, radius * 2, radius * 2);
+              ctx.drawImage(image.img, x - personRadius, y - personRadius, personRadius * 2, personRadius * 2);
             } else {
               ctx.fillStyle = fill;
               ctx.fill();
@@ -875,14 +895,14 @@ export function FilmTreeGraph({
             ctx.restore();
           } else {
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.arc(x, y, personRadius, 0, 2 * Math.PI);
             ctx.fillStyle = fill;
             ctx.globalAlpha = isConnected || isHovered ? 1 : 0.9;
             ctx.fill();
             ctx.globalAlpha = 1;
           }
           ctx.beginPath();
-          ctx.arc(x, y, radius, 0, 2 * Math.PI);
+          ctx.arc(x, y, personRadius, 0, 2 * Math.PI);
           ctx.strokeStyle = "rgba(255,255,255,0.8)";
           ctx.lineWidth = isHovered ? 2.6 : 1.4;
           ctx.stroke();
@@ -904,7 +924,7 @@ export function FilmTreeGraph({
           const labelW = ctx.measureText(label).width + 10;
           const labelH = labelFont + 6;
           const labelX = x - labelW / 2;
-          const labelY = y + radius + 6;
+          const labelY = y + personRadius + 6;
           ctx.beginPath();
           ctx.roundRect(labelX, labelY, labelW, labelH, 6);
           ctx.fillStyle = "rgba(10,10,14,0.82)";
@@ -922,7 +942,7 @@ export function FilmTreeGraph({
             const boxW = textWidth + padX * 2;
             const boxH = fontSize + padY * 2;
             const boxX = x - boxW / 2;
-            const boxY = y + radius + 8;
+            const boxY = y + personRadius + 8;
 
             ctx.beginPath();
             ctx.roundRect(boxX, boxY, boxW, boxH, 7);
@@ -936,6 +956,7 @@ export function FilmTreeGraph({
             ctx.fillStyle = "#ffffff";
             ctx.fillText(label, x, boxY + boxH - padY - 1);
           }
+          ctx.restore();
         }}
       />
 

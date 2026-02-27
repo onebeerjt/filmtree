@@ -50,8 +50,6 @@ type CenterTransition = {
   startMs: number;
 };
 
-type CoordsEvent = MouseEvent | TouchEvent | PointerEvent;
-
 const ROLE_WEIGHT: Record<string, number> = {
   Director: 0,
   Producer: 1,
@@ -153,8 +151,8 @@ function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[], preferMo
       if (distance > 34) continue;
     } else {
       const { w, h } = filmSizeFromRating(node);
-      const halfW = Math.max(26, w / 2 + 10);
-      const halfH = Math.max(36, h / 2 + 10);
+      const halfW = Math.max(28, w / 2 + 14);
+      const halfH = Math.max(38, h / 2 + 14);
       if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) continue;
     }
     const effectiveDistance = preferMovie && node.type === "movie" ? distance * 0.7 : distance;
@@ -304,6 +302,7 @@ export function FilmTreeGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods>();
   const lastNodeClickAtRef = useRef(0);
+  const pointerDownRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const centerIdRef = useRef<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -477,29 +476,6 @@ export function FilmTreeGraph({
     onMovieClick(graphNode.tmdbId);
   }
 
-  function resolvePointerToNode(event: CoordsEvent, preferMovie = false) {
-    const fg = graphRef.current as ForceGraphMethods & {
-      screen2GraphCoords?: (x: number, y: number) => { x: number; y: number };
-    };
-    if (!fg?.screen2GraphCoords) return null;
-
-    const anyEvent = event as MouseEvent & { clientX?: number; clientY?: number; offsetX?: number; offsetY?: number };
-    let sx: number | null = typeof anyEvent.offsetX === "number" ? anyEvent.offsetX : null;
-    let sy: number | null = typeof anyEvent.offsetY === "number" ? anyEvent.offsetY : null;
-
-    if (sx === null || sy === null) {
-      if (typeof anyEvent.clientX !== "number" || typeof anyEvent.clientY !== "number") return null;
-      const canvas = (event.target as HTMLElement | null)?.closest("canvas");
-      if (!canvas) return null;
-      const rect = canvas.getBoundingClientRect();
-      sx = anyEvent.clientX - rect.left;
-      sy = anyEvent.clientY - rect.top;
-    }
-
-    const graphPt = fg.screen2GraphCoords(sx, sy);
-    return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes, preferMovie);
-  }
-
   function resolveClientPoint(clientX: number, clientY: number, preferMovie = false) {
     const fg = graphRef.current as ForceGraphMethods & {
       screen2GraphCoords?: (x: number, y: number) => { x: number; y: number };
@@ -541,8 +517,18 @@ export function FilmTreeGraph({
         setHoveredId(null);
         setTooltip(null);
       }}
-      onClick={(event) => {
-        if (Date.now() - lastNodeClickAtRef.current < 120) return;
+      onPointerDownCapture={(event) => {
+        pointerDownRef.current = { x: event.clientX, y: event.clientY, at: Date.now() };
+      }}
+      onPointerUpCapture={(event) => {
+        const down = pointerDownRef.current;
+        pointerDownRef.current = null;
+        if (!down) return;
+
+        const dragDistance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+        if (dragDistance > 8) return;
+        if (Date.now() - lastNodeClickAtRef.current < 140) return;
+
         const picked = resolveClientPoint(event.clientX, event.clientY, true);
         if (picked) activateNode(picked);
       }}
@@ -617,7 +603,7 @@ export function FilmTreeGraph({
           if (graphNode.type === "movie") {
             const { w, h } = filmSizeFromRating(graphNode);
             ctx.beginPath();
-            ctx.roundRect(x - w / 2 - 4, y - h / 2 - 4, w + 8, h + 8, 10);
+            ctx.roundRect(x - w / 2 - 12, y - h / 2 - 12, w + 24, h + 24, 10);
             ctx.fill();
           } else {
             ctx.beginPath();
@@ -625,13 +611,8 @@ export function FilmTreeGraph({
             ctx.fill();
           }
         }}
-        onNodeClick={(node, event) => {
+        onNodeClick={(node) => {
           lastNodeClickAtRef.current = Date.now();
-          const fallback = resolvePointerToNode(event as CoordsEvent, true);
-          if (fallback) {
-            activateNode(fallback);
-            return;
-          }
           activateNode(node as PositionedNode);
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {

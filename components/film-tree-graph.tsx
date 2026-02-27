@@ -685,6 +685,16 @@ export function FilmTreeGraph({
             const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
             const badgePlatforms = availability?.all?.slice(0, 3) ?? [];
+            const nodeAlpha = selectedPlatforms.length > 0
+              ? isFilterMiss
+                ? graphNode.isCenter
+                  ? 0.45
+                  : 0.14
+                : 1
+              : 1;
+
+            ctx.save();
+            ctx.globalAlpha = nodeAlpha;
 
             if (graphNode.isCenter) {
               const pulse = 1 + 0.15 * (0.5 + 0.5 * Math.sin(Date.now() / 320));
@@ -800,6 +810,7 @@ export function FilmTreeGraph({
               ctx.textAlign = "center";
               ctx.fillText(badgeText, x, by + bh - padY - 1);
             }
+            ctx.restore();
             return;
           }
 

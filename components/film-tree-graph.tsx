@@ -592,7 +592,7 @@ export function FilmTreeGraph({
           if (selectedPlatforms.length > 0) {
             const sourceVisible = source?.type === "movie" ? movieMatchesPlatformFilter(source) : true;
             const targetVisible = target?.type === "movie" ? movieMatchesPlatformFilter(target) : true;
-            return sourceVisible && targetVisible ? (isCenterToPerson ? 2.1 : 1.1) : 0.45;
+            return sourceVisible && targetVisible ? (isCenterToPerson ? 2.3 : 1.2) : 0.75;
           }
 
           return isCenterToPerson ? 2.1 : 1.1;
@@ -617,7 +617,7 @@ export function FilmTreeGraph({
           if (selectedPlatforms.length > 0) {
             const sourceVisible = source?.type === "movie" ? movieMatchesPlatformFilter(source) : true;
             const targetVisible = target?.type === "movie" ? movieMatchesPlatformFilter(target) : true;
-            return sourceVisible && targetVisible ? `${baseColor}66` : "rgba(255,255,255,0.06)";
+            return sourceVisible && targetVisible ? `${baseColor}C9` : "rgba(148,163,184,0.28)";
           }
 
           if (isCenterToPerson) return `${baseColor}CC`;
@@ -682,6 +682,7 @@ export function FilmTreeGraph({
             const isHovered = hoveredId === graphNode.id || tappedNodeId === graphNode.id;
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
             const isFilterMiss = selectedPlatforms.length > 0 && !movieMatchesPlatformFilter(graphNode);
+            const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
             const badgePlatforms = availability?.all?.slice(0, 3) ?? [];
 
@@ -711,7 +712,9 @@ export function FilmTreeGraph({
 
             ctx.save();
             if (isFilterMiss) {
-              ctx.filter = "grayscale(100%) opacity(35%)";
+              ctx.filter = "grayscale(100%) brightness(55%) opacity(18%)";
+            } else if (isFilterHit) {
+              ctx.filter = "saturate(115%) brightness(108%)";
             }
             ctx.beginPath();
             ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
@@ -734,9 +737,12 @@ export function FilmTreeGraph({
 
             ctx.beginPath();
             ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
-            if (selectedPlatforms.length > 0 && !isFilterMiss) {
-              ctx.strokeStyle = "rgba(255,215,107,0.95)";
+            if (selectedPlatforms.length > 0 && isFilterHit) {
+              ctx.strokeStyle = "rgba(255,215,107,0.98)";
               ctx.lineWidth = graphNode.isCenter ? 3.4 : 2.2;
+            } else if (selectedPlatforms.length > 0 && isFilterMiss) {
+              ctx.strokeStyle = "rgba(148,163,184,0.28)";
+              ctx.lineWidth = graphNode.isCenter ? 1.6 : 1.1;
             } else {
               ctx.strokeStyle = graphNode.isCenter ? "#C9A84C" : "rgba(255,255,255,0.55)";
               ctx.lineWidth = graphNode.isCenter ? 3 : 1.4;

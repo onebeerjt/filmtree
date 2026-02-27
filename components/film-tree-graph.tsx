@@ -538,7 +538,7 @@ export function FilmTreeGraph({
       className="h-full w-full"
       onMouseMove={(event) => {
         if (isTouch) return;
-        const picked = resolveClientPoint(event.clientX, event.clientY, false);
+        const picked = resolveClientPoint(event.clientX, event.clientY, true);
         setHoveredId(picked?.id ?? null);
         if (!picked) {
           setTooltip(null);
@@ -696,6 +696,7 @@ export function FilmTreeGraph({
             const isConnected = hoveredId ? connectedNodeIds.has(graphNode.id) : false;
             const hasHoverFocus = Boolean(hoveredId);
             const isFilterMiss = selectedPlatforms.length > 0 && !movieMatchesPlatformFilter(graphNode);
+            const applyFilterMissStyle = isFilterMiss && !graphNode.isCenter;
             const isFilterHit = selectedPlatforms.length > 0 && !isFilterMiss;
             const availability = streamingByMovieId[graphNode.tmdbId];
             const badgePlatforms = availability?.subscription?.slice(0, 3) ?? [];
@@ -708,7 +709,7 @@ export function FilmTreeGraph({
             h *= hoverScale;
 
             let nodeAlpha = 1;
-            if (selectedPlatforms.length > 0 && !graphNode.isCenter && isFilterMiss) {
+            if (selectedPlatforms.length > 0 && applyFilterMissStyle) {
               nodeAlpha = 0.14;
             }
             if (hasHoverFocus) {
@@ -746,7 +747,7 @@ export function FilmTreeGraph({
             }
 
             ctx.save();
-            if (isFilterMiss) {
+            if (applyFilterMissStyle) {
               ctx.filter = "grayscale(100%) brightness(55%) opacity(18%)";
             } else if (isFilterHit) {
               ctx.filter = "saturate(115%) brightness(108%)";
@@ -775,7 +776,7 @@ export function FilmTreeGraph({
             if (selectedPlatforms.length > 0 && isFilterHit) {
               ctx.strokeStyle = "rgba(255,215,107,0.98)";
               ctx.lineWidth = graphNode.isCenter ? 3.4 : 2.2;
-            } else if (selectedPlatforms.length > 0 && isFilterMiss) {
+            } else if (selectedPlatforms.length > 0 && applyFilterMissStyle) {
               ctx.strokeStyle = "rgba(148,163,184,0.28)";
               ctx.lineWidth = graphNode.isCenter ? 1.6 : 1.1;
             } else {

@@ -12,7 +12,14 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
 });
 
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w185";
-const imageCache = new Map<string, HTMLImageElement>();
+type CachedImage = {
+  img: HTMLImageElement;
+  status: "loading" | "loaded" | "error";
+  lastAttemptAt: number;
+};
+
+const IMAGE_RETRY_MS = 15000;
+const imageCache = new Map<string, CachedImage>();
 
 type Props = {
   nodes: GraphNode[];
@@ -66,13 +73,34 @@ function easeInCubic(t: number) {
 }
 
 function loadImage(src: string) {
+  const now = Date.now();
   const cached = imageCache.get(src);
-  if (cached) return cached;
-  const img = new Image();
-  img.src = src;
+  if (cached) {
+    const shouldRetry = cached.status === "error" && now - cached.lastAttemptAt >= IMAGE_RETRY_MS;
+    if (!shouldRetry) return cached;
+    imageCache.delete(src);
+  }
+
+  const img = new Image(1, 1);
+  const entry: CachedImage = {
+    img,
+    status: "loading",
+    lastAttemptAt: now
+  };
+
   img.crossOrigin = "anonymous";
-  imageCache.set(src, img);
-  return img;
+  img.decoding = "async";
+  img.referrerPolicy = "no-referrer";
+  img.onload = () => {
+    entry.status = img.naturalWidth > 0 && img.naturalHeight > 0 ? "loaded" : "error";
+  };
+  img.onerror = () => {
+    entry.status = "error";
+  };
+  img.src = src;
+
+  imageCache.set(src, entry);
+  return entry;
 }
 
 function roleColor(role?: string) {
@@ -692,8 +720,8 @@ export function FilmTreeGraph({
 
             if (graphNode.posterPath) {
               const image = loadImage(`${IMAGE_BASE}${graphNode.posterPath}`);
-              if (image.complete) {
-                ctx.drawImage(image, x - w / 2, y - h / 2, w, h);
+              if (image.status === "loaded") {
+                ctx.drawImage(image.img, x - w / 2, y - h / 2, w, h);
               } else {
                 ctx.fillStyle = "#1f2937";
                 ctx.fillRect(x - w / 2, y - h / 2, w, h);
@@ -726,8 +754,8 @@ export function FilmTreeGraph({
                 ctx.arc(bx + badgeSize / 2, by + badgeSize / 2, badgeSize / 2 + 1.2, 0, Math.PI * 2);
                 ctx.fillStyle = "rgba(10,10,14,0.95)";
                 ctx.fill();
-                if (icon.complete) {
-                  ctx.drawImage(icon, bx, by, badgeSize, badgeSize);
+                if (icon.status === "loaded") {
+                  ctx.drawImage(icon.img, bx, by, badgeSize, badgeSize);
                 }
               });
             }
@@ -780,8 +808,8 @@ export function FilmTreeGraph({
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
             ctx.closePath();
             ctx.clip();
-            if (image.complete) {
-              ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
+            if (image.status === "loaded") {
+              ctx.drawImage(image.img, x - radius, y - radius, radius * 2, radius * 2);
             } else {
               ctx.fillStyle = fill;
               ctx.fill();

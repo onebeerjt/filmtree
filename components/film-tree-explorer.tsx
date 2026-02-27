@@ -66,6 +66,16 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function emptyStreamingAvailability(tmdbId: number): StreamingAvailability {
+  return {
+    tmdbId,
+    subscription: [],
+    rent: [],
+    buy: [],
+    all: []
+  };
+}
+
 export function FilmTreeExplorer() {
   const [tree, setTree] = useState<FilmTreeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -111,13 +121,20 @@ export function FilmTreeExplorer() {
     for (const movieId of missingIds) {
       try {
         const response = await fetch(`/api/streaming?tmdbId=${movieId}`);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          const empty = emptyStreamingAvailability(movieId);
+          nextMap[movieId] = empty;
+          setStreamingCache(movieId, empty);
+          continue;
+        }
         const value = (await response.json()) as StreamingAvailability;
-        if (!value || value.tmdbId !== movieId) continue;
-        nextMap[movieId] = value;
-        setStreamingCache(movieId, value);
+        const normalized = !value || value.tmdbId !== movieId ? emptyStreamingAvailability(movieId) : value;
+        nextMap[movieId] = normalized;
+        setStreamingCache(movieId, normalized);
       } catch {
-        // Keep graph usable even when availability lookups fail.
+        const empty = emptyStreamingAvailability(movieId);
+        nextMap[movieId] = empty;
+        setStreamingCache(movieId, empty);
       }
     }
 
@@ -332,7 +349,7 @@ export function FilmTreeExplorer() {
         </div>
       )}
 
-      <div className="pointer-events-none absolute left-1/2 top-6 z-30 w-[min(90vw,480px)] -translate-x-1/2">
+      <div className="pointer-events-none absolute left-6 top-6 z-30 w-[min(92vw,360px)] space-y-3">
         <div className="pointer-events-auto rounded-full border border-zinc-700/60 bg-zinc-950/55 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
           <MovieSearch
             onMovieSelect={handleSearchSelect}
@@ -342,39 +359,8 @@ export function FilmTreeExplorer() {
             placeholder="Search any film..."
           />
         </div>
-      </div>
 
-      <div className="pointer-events-none absolute left-1/2 top-24 z-20 w-[min(95vw,980px)] -translate-x-1/2">
-        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-700/60 bg-zinc-950/55 p-2.5 shadow-[0_16px_36px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-          {PLATFORM_ORDER.map((key) => {
-            const meta = PLATFORM_META[key];
-            const active = selectedPlatforms.includes(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => togglePlatform(key)}
-                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition"
-                style={{
-                  borderColor: active ? meta.color : "rgba(255,255,255,0.22)",
-                  backgroundColor: active ? `${meta.color}26` : "rgba(17,24,39,0.35)",
-                  color: active ? "#ffffff" : "rgba(255,255,255,0.82)"
-                }}
-              >
-                <img src={meta.logoUrl} alt={meta.label} className="h-3.5 w-3.5 object-contain" />
-                <span>{meta.shortLabel}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="pointer-events-none absolute bottom-6 left-6 z-30 rounded-full border border-zinc-700/70 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 backdrop-blur-xl">
-        Center: <span className="font-semibold text-white">{tree?.centerTitle ?? "Loading..."}</span>
-      </div>
-
-      <div className="absolute left-6 top-24 z-30 w-[min(90vw,340px)]">
-        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-3 shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-3 shadow-2xl backdrop-blur-xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Journey</p>
             <button
@@ -402,6 +388,45 @@ export function FilmTreeExplorer() {
             )}
           </div>
         </div>
+
+        <div className="pointer-events-auto rounded-2xl border border-zinc-700/60 bg-zinc-950/55 p-2.5 shadow-[0_16px_36px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Streaming</p>
+            <button
+              type="button"
+              onClick={() => setSelectedPlatforms([])}
+              className="rounded-full border border-zinc-600/80 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-[#c9a84c] hover:text-white"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {PLATFORM_ORDER.map((key) => {
+              const meta = PLATFORM_META[key];
+              const active = selectedPlatforms.includes(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => togglePlatform(key)}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition"
+                  style={{
+                    borderColor: active ? meta.color : "rgba(255,255,255,0.22)",
+                    backgroundColor: active ? `${meta.color}26` : "rgba(17,24,39,0.35)",
+                    color: active ? "#ffffff" : "rgba(255,255,255,0.82)"
+                  }}
+                >
+                  <img src={meta.logoUrl} alt={meta.label} className="h-3.5 w-3.5 object-contain" />
+                  <span>{meta.shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute bottom-6 left-6 z-30 rounded-full border border-zinc-700/70 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 backdrop-blur-xl">
+        Center: <span className="font-semibold text-white">{tree?.centerTitle ?? "Loading..."}</span>
       </div>
 
       <div className={`pointer-events-none absolute bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full border border-zinc-700/60 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-300 backdrop-blur-lg transition-opacity duration-500 ${showHint ? "opacity-100" : "opacity-0"}`}>

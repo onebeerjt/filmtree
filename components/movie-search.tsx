@@ -98,11 +98,7 @@ export function MovieSearch({
 
       setIsSearching(true);
       try {
-        const [movieResponse, personResponse] = await Promise.all([
-          fetch(`/api/tmdb/search?query=${encodeURIComponent(trimmed)}`),
-          personSearchEnabled ? fetch(`/api/tmdb/person-search?query=${encodeURIComponent(trimmed)}`) : Promise.resolve(null)
-        ]);
-
+        const movieResponse = await fetch(`/api/tmdb/search?query=${encodeURIComponent(trimmed)}`);
         const moviePayload = await movieResponse.json();
         if (!movieResponse.ok) {
           throw new Error(moviePayload.error ?? "Movie search failed");
@@ -112,13 +108,18 @@ export function MovieSearch({
         setResults(movieResults);
         setCache(moviesKey, movieResults, SEARCH_CACHE_TTL_MS);
 
-        if (personResponse) {
-          const personPayload = await personResponse.json();
-          if (personResponse.ok) {
-            const personResults = ((personPayload.results ?? []) as PersonSummary[]).slice(0, 6);
-            setPeople(personResults);
-            setCache(peopleKey, personResults, SEARCH_CACHE_TTL_MS);
-          } else {
+        if (personSearchEnabled) {
+          try {
+            const personResponse = await fetch(`/api/tmdb/person-search?query=${encodeURIComponent(trimmed)}`);
+            const personPayload = await personResponse.json();
+            if (personResponse.ok) {
+              const personResults = ((personPayload.results ?? []) as PersonSummary[]).slice(0, 6);
+              setPeople(personResults);
+              setCache(peopleKey, personResults, SEARCH_CACHE_TTL_MS);
+            } else {
+              setPeople([]);
+            }
+          } catch {
             setPeople([]);
           }
         } else {

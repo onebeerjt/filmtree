@@ -150,11 +150,11 @@ function pickNodeAtPoint(x: number, y: number, nodes: PositionedNode[], preferMo
     const dy = y - node.y;
     const distance = Math.hypot(dx, dy);
     if (node.type === "person") {
-      if (distance > 30) continue;
+      if (distance > 34) continue;
     } else {
       const { w, h } = filmSizeFromRating(node);
-      const halfW = Math.max(24, w / 2 + 8);
-      const halfH = Math.max(34, h / 2 + 8);
+      const halfW = Math.max(26, w / 2 + 10);
+      const halfH = Math.max(36, h / 2 + 10);
       if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) continue;
     }
     const effectiveDistance = preferMovie && node.type === "movie" ? distance * 0.7 : distance;
@@ -301,7 +301,9 @@ export function FilmTreeGraph({
   streamingByMovieId,
   selectedPlatforms
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods>();
+  const lastNodeClickAtRef = useRef(0);
   const centerIdRef = useRef<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -498,8 +500,53 @@ export function FilmTreeGraph({
     return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes, preferMovie);
   }
 
+  function resolveClientPoint(clientX: number, clientY: number, preferMovie = false) {
+    const fg = graphRef.current as ForceGraphMethods & {
+      screen2GraphCoords?: (x: number, y: number) => { x: number; y: number };
+      graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+    };
+    if (!fg?.screen2GraphCoords) return null;
+
+    const container = containerRef.current;
+    const canvas = container?.querySelector("canvas");
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top;
+    const graphPt = fg.screen2GraphCoords(sx, sy);
+    return pickNodeAtPoint(graphPt.x, graphPt.y, graphData.nodes, preferMovie);
+  }
+
   return (
-    <div className="h-full w-full">
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      onMouseMove={(event) => {
+        if (isTouch) return;
+        const picked = resolveClientPoint(event.clientX, event.clientY, false);
+        setHoveredId(picked?.id ?? null);
+        if (!picked) {
+          setTooltip(null);
+          return;
+        }
+        const fg = graphRef.current as ForceGraphMethods & {
+          graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+        };
+        if (!fg?.graph2ScreenCoords) return;
+        const pt = fg.graph2ScreenCoords(picked.x, picked.y);
+        setTooltip({ nodeId: picked.id, x: pt.x, y: pt.y });
+      }}
+      onMouseLeave={() => {
+        if (isTouch) return;
+        setHoveredId(null);
+        setTooltip(null);
+      }}
+      onClick={(event) => {
+        if (Date.now() - lastNodeClickAtRef.current < 120) return;
+        const picked = resolveClientPoint(event.clientX, event.clientY, true);
+        if (picked) activateNode(picked);
+      }}
+    >
       <ForceGraph2D
         ref={graphRef}
         graphData={graphData}
@@ -578,35 +625,14 @@ export function FilmTreeGraph({
             ctx.fill();
           }
         }}
-        onNodeHover={(node) => {
-          if (isTouch) return;
-          const graphNode = node as PositionedNode | null;
-          setHoveredId(graphNode?.id ?? null);
-
-          const fg = graphRef.current as ForceGraphMethods & {
-            graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
-          };
-          if (!graphNode || !fg?.graph2ScreenCoords) {
-            setTooltip(null);
-            return;
-          }
-
-          const pt = fg.graph2ScreenCoords(graphNode.x, graphNode.y);
-          setTooltip({ nodeId: graphNode.id, x: pt.x, y: pt.y });
-        }}
         onNodeClick={(node, event) => {
+          lastNodeClickAtRef.current = Date.now();
           const fallback = resolvePointerToNode(event as CoordsEvent, true);
           if (fallback) {
             activateNode(fallback);
             return;
           }
           activateNode(node as PositionedNode);
-        }}
-        onBackgroundClick={(event) => {
-          const fallbackNode = resolvePointerToNode(event as CoordsEvent, true);
-          if (fallbackNode) {
-            activateNode(fallbackNode);
-          }
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const graphNode = node as PositionedNode;

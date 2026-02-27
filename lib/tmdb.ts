@@ -167,6 +167,17 @@ function pickCorePeople(credits: CreditsResponse): PersonCredit[] {
 function selectNotableMovies(movies: MovieSummary[], centerMovieId: number, limit = 4) {
   const seen = new Set<number>();
 
+  function movieScore(movie: MovieSummary) {
+    const rating = movie.vote_average ?? 0;
+    const voteCount = movie.vote_count ?? 0;
+    const popularity = movie.popularity ?? 0;
+    const year = Number((movie.release_date ?? "").slice(0, 4));
+    const recencyBonus = Number.isFinite(year) && year >= 1980 ? Math.min(24, (year - 1980) * 0.35) : 0;
+
+    // Balance critical signal + audience signal + popularity.
+    return rating * 26 + Math.log10(voteCount + 1) * 180 + popularity * 1.1 + recencyBonus;
+  }
+
   return movies
     .filter((movie) => movie.id !== centerMovieId && movie.title)
     .filter((movie) => {
@@ -174,11 +185,7 @@ function selectNotableMovies(movies: MovieSummary[], centerMovieId: number, limi
       seen.add(movie.id);
       return true;
     })
-    .sort((a, b) => {
-      const scoreA = (a.popularity ?? 0) + (a.vote_count ?? 0) * 0.01;
-      const scoreB = (b.popularity ?? 0) + (b.vote_count ?? 0) * 0.01;
-      return scoreB - scoreA;
-    })
+    .sort((a, b) => movieScore(b) - movieScore(a))
     .slice(0, limit);
 }
 
@@ -219,7 +226,7 @@ export async function buildFilmTree(movieId: number): Promise<FilmTreeResponse> 
           ? [...movieCredits.crew.filter((m) => m.job === "Director"), ...movieCredits.cast, ...movieCredits.crew]
           : [...movieCredits.cast, ...movieCredits.crew];
 
-      const perPersonLimit = person.role === "Actor" ? 8 : person.role === "Director" ? 14 : 12;
+      const perPersonLimit = person.role === "Actor" ? 12 : person.role === "Director" ? 22 : 16;
       return {
         person,
         relatedMovies: selectNotableMovies(merged, centerMovie.id, perPersonLimit)

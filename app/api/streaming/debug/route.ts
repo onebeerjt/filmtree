@@ -5,7 +5,16 @@ import type { StreamingAvailability } from "@/lib/types";
 const WATCHMODE_BASE_URL = "https://api.watchmode.com/v1";
 
 type WatchmodeSearchResponse = {
-  title_results?: Array<{ id: number }>;
+  title_results?: WatchmodeSearchTitle[];
+};
+
+type WatchmodeSearchTitle = {
+  id: number;
+  title?: string;
+  name?: string;
+  year?: number;
+  release_year?: number;
+  tmdb_id?: number;
 };
 
 type WatchmodeSource = {
@@ -14,6 +23,12 @@ type WatchmodeSource = {
   web_url?: string;
   ios_url?: string;
   android_url?: string;
+};
+
+type SearchAttempt = {
+  strategy: string;
+  status: number;
+  resultCount: number;
 };
 
 function emptyAvailability(tmdbId: number): StreamingAvailability {
@@ -53,9 +68,76 @@ function parseSources(tmdbId: number, sources: WatchmodeSource[]): StreamingAvai
   };
 }
 
+function normalizeTitle(value?: string | null) {
+  if (!value) return "";
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function titleFromResult(result: WatchmodeSearchTitle) {
+  return (result.title ?? result.name ?? "").trim();
+}
+
+function yearFromResult(result: WatchmodeSearchTitle) {
+  return result.year ?? result.release_year ?? null;
+}
+
+function scoreTitleCandidate(candidate: WatchmodeSearchTitle, requestedTitle: string, requestedYear?: number | null) {
+  const candidateTitle = normalizeTitle(titleFromResult(candidate));
+  const wantedTitle = normalizeTitle(requestedTitle);
+
+  let score = 0;
+  if (candidateTitle === wantedTitle) score += 300;
+  else if (candidateTitle.startsWith(wantedTitle)) score += 170;
+  else if (candidateTitle.includes(wantedTitle)) score += 100;
+
+  const candidateYear = yearFromResult(candidate);
+  if (requestedYear && candidateYear) {
+    if (candidateYear === requestedYear) score += 140;
+    else if (Math.abs(candidateYear - requestedYear) === 1) score += 60;
+    else if (Math.abs(candidateYear - requestedYear) <= 3) score += 20;
+  }
+
+  return score;
+}
+
+async function runSearch(
+  apiKey: string,
+  field: string,
+  value: string,
+  attempts: SearchAttempt[]
+): Promise<WatchmodeSearchTitle[]> {
+  const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
+  searchUrl.searchParams.set("apiKey", apiKey);
+  searchUrl.searchParams.set("search_field", field);
+  searchUrl.searchParams.set("search_value", value);
+  searchUrl.searchParams.set("types", "movie");
+
+  const searchResponse = await fetch(searchUrl.toString(), {
+    headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
+
+  if (!searchResponse.ok) {
+    attempts.push({ strategy: `${field}:${value}`, status: searchResponse.status, resultCount: 0 });
+    return [];
+  }
+
+  const payload = (await searchResponse.json()) as WatchmodeSearchResponse;
+  const results = payload.title_results ?? [];
+  attempts.push({ strategy: `${field}:${value}`, status: searchResponse.status, resultCount: results.length });
+  return results;
+}
+
 export async function GET(request: NextRequest) {
   const tmdbId = Number(request.nextUrl.searchParams.get("tmdbId"));
   const region = request.nextUrl.searchParams.get("region") ?? "US";
+  const title = request.nextUrl.searchParams.get("title")?.trim();
+  const yearParam = request.nextUrl.searchParams.get("year")?.trim();
+  const year = yearParam && /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
 
   if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
     return NextResponse.json({ error: "Invalid tmdbId parameter" }, { status: 400 });
@@ -74,32 +156,49 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const searchUrl = new URL(`${WATCHMODE_BASE_URL}/search/`);
-    searchUrl.searchParams.set("apiKey", watchmodeKey);
-    searchUrl.searchParams.set("search_field", "tmdb_id");
-    searchUrl.searchParams.set("search_value", String(tmdbId));
-    searchUrl.searchParams.set("types", "movie");
+    const attempts: SearchAttempt[] = [];
 
-    const searchResponse = await fetch(searchUrl.toString(), {
-      headers: { Accept: "application/json" },
-      cache: "no-store"
-    });
+    const byTmdb = await runSearch(watchmodeKey, "tmdb_id", String(tmdbId), attempts);
+    let picked: WatchmodeSearchTitle | null = byTmdb[0] ?? null;
+    let lookupStrategy = "tmdb_id";
 
-    const searchPayload = searchResponse.ok ? ((await searchResponse.json()) as WatchmodeSearchResponse) : null;
-    const titleId = searchPayload?.title_results?.[0]?.id ?? null;
+    if (!picked && title) {
+      for (const field of ["name", "title"]) {
+        const results = await runSearch(watchmodeKey, field, title, attempts);
+        if (results.length === 0) continue;
+        let best: WatchmodeSearchTitle | null = null;
+        let bestScore = Number.NEGATIVE_INFINITY;
+        for (const result of results) {
+          const score = scoreTitleCandidate(result, title, year);
+          if (score > bestScore) {
+            best = result;
+            bestScore = score;
+          }
+        }
+        if (best) {
+          picked = best;
+          lookupStrategy = `${field}_fallback`;
+          break;
+        }
+      }
+    }
 
-    if (!searchResponse.ok || !titleId) {
+    const titleId = picked?.id ?? null;
+    if (!titleId) {
       return NextResponse.json({
         service: "watchmode",
         hasApiKey: true,
         tmdbId,
+        requestTitle: title ?? null,
+        requestYear: year ?? null,
         region,
-        searchStatus: searchResponse.status,
+        attempts,
+        searchStatus: attempts[0]?.status ?? null,
         titleId,
         sourceStatus: null,
         rawSourceCount: 0,
         normalized: emptyAvailability(tmdbId),
-        message: !titleId ? "No Watchmode title match found for this TMDB movie id." : "Watchmode search failed."
+        message: "No Watchmode title match found via tmdb_id or title fallback."
       });
     }
 
@@ -119,8 +218,12 @@ export async function GET(request: NextRequest) {
       service: "watchmode",
       hasApiKey: true,
       tmdbId,
+      requestTitle: title ?? null,
+      requestYear: year ?? null,
       region,
-      searchStatus: searchResponse.status,
+      attempts,
+      lookupStrategy,
+      searchStatus: attempts[0]?.status ?? null,
       titleId,
       sourceStatus: sourcesResponse.status,
       rawSourceCount: rawSources.length,
@@ -142,4 +245,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

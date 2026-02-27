@@ -77,7 +77,10 @@ export function StreamingDebug() {
       const uniqueMovies = Array.from(new Map(movies.map((m) => [m.tmdbId, m])).values());
       const debugRows = await Promise.all(
         uniqueMovies.map(async (m) => {
-          const response = await fetch(`/api/streaming/debug?tmdbId=${m.tmdbId}`);
+          const params = new URLSearchParams({ tmdbId: String(m.tmdbId) });
+          if (m.title) params.set("title", m.title);
+          if (m.year && /^\d{4}$/.test(m.year)) params.set("year", m.year);
+          const response = await fetch(`/api/streaming/debug?${params.toString()}`);
           const payload = await response.json();
           return {
             tmdbId: m.tmdbId,
@@ -223,4 +226,3 @@ export function StreamingDebug() {
     </main>
   );
 }
-

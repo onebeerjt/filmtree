@@ -101,40 +101,52 @@ export function FilmTreeExplorer() {
   }
 
   async function fetchStreamingForTree(nextTree: FilmTreeResponse) {
-    const movieIds = nextTree.nodes.filter((node) => node.type === "movie").map((node) => node.tmdbId);
-    if (movieIds.length === 0) return;
+    const movies = nextTree.nodes
+      .filter((node) => node.type === "movie")
+      .map((node) => ({
+        tmdbId: node.tmdbId,
+        title: node.title ?? "",
+        year: node.year ?? ""
+      }));
+    if (movies.length === 0) return;
 
     const cachedMap: Record<number, StreamingAvailability> = {};
-    const missingIds: number[] = [];
-    for (const movieId of movieIds) {
-      const cached = getStreamingCache(movieId);
-      if (cached) cachedMap[movieId] = cached;
-      else missingIds.push(movieId);
+    const missingMovies: Array<{ tmdbId: number; title: string; year: string }> = [];
+    for (const movie of movies) {
+      const cached = getStreamingCache(movie.tmdbId);
+      if (cached) cachedMap[movie.tmdbId] = cached;
+      else missingMovies.push(movie);
     }
     if (Object.keys(cachedMap).length > 0) {
       setStreamingByMovieId((prev) => ({ ...prev, ...cachedMap }));
     }
 
-    if (missingIds.length === 0) return;
+    if (missingMovies.length === 0) return;
 
     const nextMap: Record<number, StreamingAvailability> = {};
-    for (const movieId of missingIds) {
+    for (const movie of missingMovies) {
       try {
-        const response = await fetch(`/api/streaming?tmdbId=${movieId}`);
+        const params = new URLSearchParams({
+          tmdbId: String(movie.tmdbId)
+        });
+        if (movie.title) params.set("title", movie.title);
+        if (movie.year) params.set("year", movie.year);
+
+        const response = await fetch(`/api/streaming?${params.toString()}`);
         if (!response.ok) {
-          const empty = emptyStreamingAvailability(movieId);
-          nextMap[movieId] = empty;
-          setStreamingCache(movieId, empty);
+          const empty = emptyStreamingAvailability(movie.tmdbId);
+          nextMap[movie.tmdbId] = empty;
+          setStreamingCache(movie.tmdbId, empty);
           continue;
         }
         const value = (await response.json()) as StreamingAvailability;
-        const normalized = !value || value.tmdbId !== movieId ? emptyStreamingAvailability(movieId) : value;
-        nextMap[movieId] = normalized;
-        setStreamingCache(movieId, normalized);
+        const normalized = !value || value.tmdbId !== movie.tmdbId ? emptyStreamingAvailability(movie.tmdbId) : value;
+        nextMap[movie.tmdbId] = normalized;
+        setStreamingCache(movie.tmdbId, normalized);
       } catch {
-        const empty = emptyStreamingAvailability(movieId);
-        nextMap[movieId] = empty;
-        setStreamingCache(movieId, empty);
+        const empty = emptyStreamingAvailability(movie.tmdbId);
+        nextMap[movie.tmdbId] = empty;
+        setStreamingCache(movie.tmdbId, empty);
       }
     }
 

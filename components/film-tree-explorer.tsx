@@ -242,12 +242,15 @@ export function FilmTreeExplorer() {
         const randomTitle = RANDOM_SEED_TITLES[Math.floor(Math.random() * RANDOM_SEED_TITLES.length)] ?? "Inception";
         const randomResponse = await fetch(`/api/tmdb/search?query=${encodeURIComponent(randomTitle)}`);
         const randomPayload = await randomResponse.json();
-        let movie = (randomPayload.results?.[0] ?? null) as MovieSummary | null;
+        let movie = randomResponse.ok ? ((randomPayload.results?.[0] ?? null) as MovieSummary | null) : null;
 
         if (!movie) {
           const fallbackResponse = await fetch(`/api/tmdb/search?query=${encodeURIComponent("Inception")}`);
           const fallbackPayload = await fallbackResponse.json();
-          movie = (fallbackPayload.results?.[0] ?? null) as MovieSummary | null;
+          movie = fallbackResponse.ok ? ((fallbackPayload.results?.[0] ?? null) as MovieSummary | null) : null;
+          if (!fallbackResponse.ok) {
+            throw new Error(fallbackPayload.error ?? "Default movie search failed");
+          }
         }
 
         if (movie) {
@@ -261,9 +264,12 @@ export function FilmTreeExplorer() {
             }
           ]);
           await fetchTree(movie.id);
+        } else {
+          setError("No starter movies returned from TMDB. Check TMDB_API_KEY and redeploy.");
         }
-      } catch {
-        setError("Unable to load default movie.");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unable to load default movie.";
+        setError(message);
       } finally {
         setIsLoading(false);
       }
@@ -338,7 +344,7 @@ export function FilmTreeExplorer() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute left-1/2 top-24 z-30 w-[min(95vw,980px)] -translate-x-1/2">
+      <div className="pointer-events-none absolute left-1/2 top-24 z-20 w-[min(95vw,980px)] -translate-x-1/2">
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-zinc-700/60 bg-zinc-950/55 p-2.5 shadow-[0_16px_36px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           {PLATFORM_ORDER.map((key) => {
             const meta = PLATFORM_META[key];

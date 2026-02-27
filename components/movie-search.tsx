@@ -60,6 +60,7 @@ export function MovieSearch({
   const [results, setResults] = useState<MovieSummary[]>([]);
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [showList, setShowList] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -81,6 +82,7 @@ export function MovieSearch({
     if (!trimmed || trimmed.length < 2) {
       setResults([]);
       setPeople([]);
+      setSearchError(null);
       return;
     }
 
@@ -93,6 +95,7 @@ export function MovieSearch({
       if (cachedMovies && (!personSearchEnabled || cachedPeople)) {
         setResults(cachedMovies);
         setPeople(personSearchEnabled ? cachedPeople ?? [] : []);
+        setSearchError(null);
         return;
       }
 
@@ -106,6 +109,7 @@ export function MovieSearch({
 
         const movieResults = ((moviePayload.results ?? []) as MovieSummary[]).slice(0, 6);
         setResults(movieResults);
+        setSearchError(null);
         setCache(moviesKey, movieResults, SEARCH_CACHE_TTL_MS);
 
         if (personSearchEnabled) {
@@ -128,6 +132,7 @@ export function MovieSearch({
       } catch {
         setResults([]);
         setPeople([]);
+        setSearchError("Search is unavailable right now.");
       } finally {
         setIsSearching(false);
       }
@@ -206,10 +211,14 @@ export function MovieSearch({
       </div>
 
       {showList && (query.trim().length >= 2 || isSearching) && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[52vh] w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-[52vh] w-full overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl">
           {isSearching && <p className="px-3 py-3 text-sm text-zinc-400">Searching...</p>}
 
-          {!isSearching && results.length === 0 && people.length === 0 && (
+          {!isSearching && searchError && (
+            <p className="px-3 py-3 text-sm text-red-300">{searchError}</p>
+          )}
+
+          {!isSearching && !searchError && results.length === 0 && people.length === 0 && (
             <p className="px-3 py-3 text-sm text-zinc-500">No results found.</p>
           )}
 
